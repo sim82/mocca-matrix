@@ -5,7 +5,7 @@ extern crate panic_halt;
 
 extern crate stm32l4xx_hal as hal;
 
-use mocca_matrix_rtic::{app::App, prelude::*};
+use mocca_matrix_rtic::{app::App, hex::Hex, prelude::*};
 use smart_leds::{brightness, RGB8};
 use ws2812::Ws2812;
 
@@ -35,8 +35,8 @@ use smart_leds::SmartLedsWrite;
 use ssd1306::{mode::GraphicsMode, prelude::*, Builder, I2CDIBuilder};
 use ws2812_spi as ws2812;
 
-const REFRESH_DISPLAY_PERIOD: u32 = 64_000_000 / 40;
-const REFRESH_LED_STRIP_PERIOD: u32 = 64_000_000 / 32;
+const REFRESH_DISPLAY_PERIOD: u32 = 64_000_000 / 20;
+const REFRESH_LED_STRIP_PERIOD: u32 = 64_000_000 / 60;
 
 #[rtic::app(device = hal::stm32, peripherals = true, monotonic = rtic::cyccnt::CYCCNT)]
 const APP: () = {
@@ -67,7 +67,8 @@ const APP: () = {
         led_strip_data: [RGB8; NUM_LEDS],
         led_strip_current: [u32; 4],
         dynamic_limit: [power_zones::DynamicLimit; 4],
-        app: crate::app::drawing::Drawing,
+        // app: crate::app::drawing::Drawing,
+        app: crate::app::hexlife::Hexlife,
         count: u32,
         dbg_pin: PA1<Output<PushPull>>,
     }
@@ -169,7 +170,8 @@ const APP: () = {
             led_strip_data: [mocca_matrix_rtic::color::BLACK; NUM_LEDS],
             led_strip_current: [0; 4],
             dynamic_limit: Default::default(),
-            app: crate::app::drawing::Drawing::new(),
+            // app: crate::app::drawing::Drawing::new(),
+            app: crate::app::hexlife::Hexlife::new(),
             count: 0,
             dbg_pin,
         }
