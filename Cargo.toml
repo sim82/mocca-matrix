@@ -16,6 +16,10 @@ embedded-graphics = "^0.6"
 heapless = "^0.5"
 smart-leds = "^0.3"
 ws2812-spi = "^0.4"
+num-traits = {version = "^0.2", default-features = false}
+bitset-core = { version = "^0.1",default-features = false}
+micromath = "^1"
+
 
 [dependencies.stm32l4xx-hal]
 git = "https://github.com/stm32-rs/stm32l4xx-hal.git"
