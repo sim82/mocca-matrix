@@ -4,6 +4,8 @@ use smart_leds::brightness;
 use crate::{bitzet::Bitzet, math::Vec2, prelude::*};
 
 type BitzetN = Bitzet<128>;
+const LERP_TIME: i32 = 60 * 5;
+const PAUSE_TIME: i32 = 60 * 5;
 
 pub struct Hexlife {
     black: BitzetN,
@@ -12,6 +14,10 @@ pub struct Hexlife {
     keep_on: [u32; NUM_LEDS / 32 + 1],
 
     rainbow: Rainbow,
+
+    last: [RGB8; NUM_LEDS],
+    next: [RGB8; NUM_LEDS],
+    f: i32,
 }
 
 fn adjacent(v: Vec2) -> [Vec2; 6] {
@@ -107,28 +113,16 @@ impl app::App for Hexlife {
             i: 0,
             keep_on: [0u32; NUM_LEDS / 32 + 1],
             rainbow: Rainbow::step(7),
+            next: [color::BLACK; NUM_LEDS],
+            last: [color::BLACK; NUM_LEDS],
+            f: LERP_TIME,
         }
     }
 
     fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS]) {
-        // {
-        //     let mut rainbow = Rainbow::step(3);
-        //     for _ in 0..100 {
-        //         let c = rainbow.next().unwrap();
-        //         data.iter_mut().for_each(|v| {
-        //             if v.r != 0 || v.g != 0 || v.b != 0 {
-        //                 *v = c
-        //             }
-        //         });
-        //         ws.write(brightness(data.iter().cloned(), 32)).unwrap();
-        //     }
-        // }
-        // while button.is_high().unwrap() {}
-
         // let mut rainbow = Rainbow::step(7);
-        let warp_mode = false; //button.is_low().unwrap();
-        let hold_mode = false; //button.is_low().unwrap();
-        if self.i % 60 == 0 || warp_mode {
+
+        if self.f >= LERP_TIME + PAUSE_TIME {
             let mut black_new = Bitzet::new();
 
             for v in self.black.iter() {
@@ -158,43 +152,51 @@ impl app::App for Hexlife {
                 }
             }
 
-            if !hold_mode {
-                self.black = black_new;
+            self.black = black_new;
 
-                // {
-                //     let mut num_buffer = [0u8; 20];
-                //     let mut text = ArrayString::<[_; 100]>::new();
-                //     text.push_str("num: ");
-                //     text.push_str(black.len().numtoa_str(10, &mut num_buffer));
-                //     console.write(&text, Some(0));
-                // }
-            }
+            self.last = self.next;
+            self.next.fill(color::BLACK);
             self.keep_on.fill(0);
-            if warp_mode {
-                led_data.fill(RGB8::default());
-            }
             for v in self.black.iter() {
                 if let Ok(addr) = set_matrix(
                     (v.x + 10) as usize,
                     (v.y + 10) as usize,
                     self.rainbow.next().unwrap(),
-                    led_data,
+                    &mut self.next,
                 ) {
                     self.keep_on.bit_set(addr as usize);
                 }
             }
-        }
-        self.i = self.i.overflowing_add(1).0;
+            self.f = 0;
 
-        if !warp_mode {
-            for i in 0..NUM_LEDS {
-                if !self.keep_on.bit_test(i) {
-                    let v = &mut led_data[i];
-                    // let old = [v.clone(); 1];
-                    *v = brightness(core::iter::once(*v), 222).next().unwrap();
-                }
+            *led_data = self.last;
+        } else if self.f < PAUSE_TIME {
+            // for i in 0..NUM_LEDS {
+            //     if !self.keep_on.bit_test(i) {
+            //         let v = &mut led_data[i];
+            //         // let old = [v.clone(); 1];
+            //         *v = brightness(core::iter::once(*v), 222).next().unwrap();
+            //     }
+            // }
+
+            for (out, (last, next)) in led_data
+                .iter_mut()
+                .zip(self.last.iter().zip(self.next.iter()))
+            {
+                let r =
+                    last.r as i32 + (next.r as i32 - last.r as i32) * (self.f as i32) / LERP_TIME;
+                let g =
+                    last.g as i32 + (next.g as i32 - last.g as i32) * (self.f as i32) / LERP_TIME;
+                let b =
+                    last.b as i32 + (next.b as i32 - last.b as i32) * (self.f as i32) / LERP_TIME;
+
+                out.r = r as u8;
+                out.g = g as u8;
+                out.b = b as u8;
             }
         }
+        self.i = self.i.overflowing_add(1).0;
+        self.f = self.f.overflowing_add(1).0;
     }
 }
 
