@@ -170,7 +170,7 @@ impl app::App for Hexlife {
             self.f = 0;
 
             *led_data = self.last;
-        } else if self.f < PAUSE_TIME {
+        } else if self.f <= LERP_TIME {
             // for i in 0..NUM_LEDS {
             //     if !self.keep_on.bit_test(i) {
             //         let v = &mut led_data[i];

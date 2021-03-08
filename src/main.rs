@@ -68,7 +68,8 @@ const APP: () = {
         led_strip_current: [u32; 4],
         dynamic_limit: [power_zones::DynamicLimit; 4],
         // app: crate::app::drawing::Drawing,
-        app: crate::app::hexlife::Hexlife,
+        // app: crate::app::hexlife::Hexlife,
+        app: crate::app::power::Power,
         count: u32,
         dbg_pin: PA1<Output<PushPull>>,
     }
@@ -171,7 +172,8 @@ const APP: () = {
             led_strip_current: [0; 4],
             dynamic_limit: Default::default(),
             // app: crate::app::drawing::Drawing::new(),
-            app: crate::app::hexlife::Hexlife::new(),
+            // app: crate::app::hexlife::Hexlife::new(),
+            app: crate::app::power::Power::new(),
             count: 0,
             dbg_pin,
         }
