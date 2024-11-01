@@ -1,0 +1,28 @@
+[package]
+name = "mocca-matrix-embassy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cortex-m-rt = "0.7.3"
+defmt = "0.3.8"
+defmt-rtt = "0.4.1"
+embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", version = "0.6.1", features = ["task-arena-size-98304", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt", "integrated-timers"] }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", version = "0.2.0", features = ["defmt", "time-driver", "critical-section-impl", "rp2040"]}
+embassy-time = { git = "https://github.com/embassy-rs/embassy.git", version = "0.3.2" }
+fixed = "1.28.0"
+panic-probe = "0.3.2"
+pio = "0.2.1"
+smart-leds = "0.4.0"
+
+
+
+[profile.release]
+debug = 2
+lto = true
+opt-level = 'z'
+
+[profile.dev]
+debug = 2
+lto = true
+opt-level = "z"
