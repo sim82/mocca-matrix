@@ -41,7 +41,7 @@ use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::PIO0;
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
-use embassy_time::{Duration, Ticker};
+use embassy_time::{Duration, Ticker, Timer};
 use smart_leds::RGB8;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -64,40 +64,23 @@ fn wheel(mut wheel_pos: u8) -> RGB8 {
     (wheel_pos * 3, 255 - wheel_pos * 3, 0).into()
 }
 
-#[embassy_executor::main]
-async fn main(_spawner: Spawner) {
-    info!("Start");
-    let p = embassy_rp::init(Default::default());
-
-    let mut led = Output::new(p.PIN_25, Level::Low);
-
-    let Pio {
-        mut common, sm0, ..
-    } = Pio::new(p.PIO0, Irqs);
-
+#[embassy_executor::task]
+async fn blink_task(mut led: Output<'static>) {
+    loop {
+        led.set_high();
+        Timer::after_millis(100).await;
+        led.set_low();
+        Timer::after_millis(100).await;
+    }
+}
+const NUM_LEDS: usize = 8;
+#[embassy_executor::task]
+async fn rgb_task(mut ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
     // This is the number of leds in the string. Helpfully, the sparkfun thing plus and adafruit
     // feather boards for the 2040 both have one built in.
-    const NUM_LEDS: usize = 8;
     let mut data = [RGB8::default(); NUM_LEDS];
-
-    // Common neopixel pins:
-    // Thing plus: 8
-    // Adafruit Feather: 16;  Adafruit Feather+RFM95: 4
-    let program = PioWs2812Program::new(&mut common);
-    let mut ws2812 = PioWs2812::new(&mut common, sm0, p.DMA_CH0, p.PIN_16, &program);
-
-    // Loop forever making RGB values and pushing them out to the WS2812.
     let mut ticker = Ticker::every(Duration::from_millis(10));
-    let mut on = false;
     loop {
-        debug!("on: {}", on);
-        if on {
-            led.set_low();
-        } else {
-            led.set_high();
-        }
-        on = !on;
-
         for j in 0..(256 * 5) {
             // debug!("New Colors:");
             for i in 0..NUM_LEDS {
@@ -109,4 +92,25 @@ async fn main(_spawner: Spawner) {
             ticker.next().await;
         }
     }
+}
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    info!("Start");
+    let p = embassy_rp::init(Default::default());
+
+    let led = Output::new(p.PIN_25, Level::Low);
+
+    let Pio {
+        mut common, sm0, ..
+    } = Pio::new(p.PIO0, Irqs);
+
+    // Common neopixel pins:
+    // Thing plus: 8
+    // Adafruit Feather: 16;  Adafruit Feather+RFM95: 4
+    let program = PioWs2812Program::new(&mut common);
+    let ws2812 = PioWs2812::new(&mut common, sm0, p.DMA_CH0, p.PIN_16, &program);
+
+    // Loop forever making RGB values and pushing them out to the WS2812.
+    unwrap!(spawner.spawn(blink_task(led)));
+    unwrap!(spawner.spawn(rgb_task(ws2812)));
 }
