@@ -40,8 +40,9 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::PIO0;
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
+// use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
 use embassy_time::{Duration, Ticker, Timer};
+use mocca_matrix_embassy::ws2812::{PioWs2812, PioWs2812Program};
 use smart_leds::RGB8;
 use {defmt_rtt as _, panic_probe as _};
 
