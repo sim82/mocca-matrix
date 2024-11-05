@@ -42,6 +42,7 @@ use embassy_rp::peripherals::PIO0;
 use embassy_rp::pio::{InterruptHandler, Pio};
 // use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
 use embassy_time::{Duration, Ticker, Timer};
+use mocca_matrix_embassy::prelude::*;
 use mocca_matrix_embassy::ws2812::{PioWs2812, PioWs2812Program};
 use smart_leds::RGB8;
 use {defmt_rtt as _, panic_probe as _};
@@ -74,13 +75,13 @@ async fn blink_task(mut led: Output<'static>) {
         Timer::after_millis(100).await;
     }
 }
-const NUM_LEDS: usize = 8;
+// const NUM_LEDS: usize = 8;
 #[embassy_executor::task]
 async fn rgb_task(mut ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
     // This is the number of leds in the string. Helpfully, the sparkfun thing plus and adafruit
     // feather boards for the 2040 both have one built in.
     let mut data = [RGB8::default(); NUM_LEDS];
-    let mut ticker = Ticker::every(Duration::from_millis(10));
+    let mut ticker = Ticker::every(Duration::from_millis(16));
     loop {
         for j in 0..(256 * 5) {
             // debug!("New Colors:");
