@@ -134,11 +134,15 @@ async fn rgb_task(mut ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
     //     }
     // }
     // let mut app = app::drawing::new();
+    let mut splash = app::drawing::new();
     let mut app = app::hexlife2::new();
     loop {
         // led_strip.data.fill([255, 255, 255].into());
-
-        app.tick(&mut led_strip.data);
+        if led_strip.count < 100 {
+            splash.tick(&mut led_strip.data);
+        } else {
+            app.tick(&mut led_strip.data);
+        }
         led_strip.write().await;
         ticker.next().await;
     }
