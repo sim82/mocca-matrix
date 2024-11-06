@@ -1,179 +1,14 @@
 #![no_std]
-pub mod ws2812 {
-    //! [ws2812](https://www.sparkfun.com/datasheets/LCD/HD44780.pdf)
-
-    use embassy_time::Timer;
-    use fixed::types::U24F8;
-    use smart_leds::RGB8;
-
-    use embassy_rp::clocks::clk_sys_freq;
-    use embassy_rp::dma::{AnyChannel, Channel};
-    use embassy_rp::pio::{
-        Common, Config, FifoJoin, Instance, LoadedProgram, PioPin, ShiftConfig, ShiftDirection,
-        StateMachine,
-    };
-    use embassy_rp::{into_ref, Peripheral, PeripheralRef};
-
-    const T1: u8 = 2; // start bit
-    const T2: u8 = 5; // data bit
-    const T3: u8 = 3; // stop bit
-    const CYCLES_PER_BIT: u32 = (T1 + T2 + T3) as u32;
-
-    /// This struct represents a ws2812 program loaded into pio instruction memory.
-    pub struct PioWs2812Program<'a, PIO: Instance> {
-        prg: LoadedProgram<'a, PIO>,
-    }
-
-    impl<'a, PIO: Instance> PioWs2812Program<'a, PIO> {
-        /// Load the ws2812 program into the given pio
-        pub fn new2(common: &mut Common<'a, PIO>) -> Self {
-            let prg = pio_proc::pio_asm!(
-                r#"
-                    .side_set 1
-                    set pindirs, 1               side 0
-                    .wrap_target
-                    start:
-                        out x, 1 [2]             side 0
-                        jmp !x, do_zero [1]      side 1
-                        jmp start [4]            side 1
-                    do_zero:
-                        nop [4]                  side 0
-                    .wrap
-                "#
-            );
-            let prg = common.load_program(&prg.program);
-            Self { prg }
-        }
-        pub fn new(common: &mut Common<'a, PIO>) -> Self {
-            let side_set = pio::SideSet::new(false, 1, false);
-            let mut a: pio::Assembler<32> = pio::Assembler::new_with_side_set(side_set);
-
-            let mut wrap_target = a.label();
-            let mut wrap_source = a.label();
-            let mut do_zero = a.label();
-            a.set_with_side_set(pio::SetDestination::PINDIRS, 1, 0);
-            a.bind(&mut wrap_target);
-            // Do stop bit
-            a.out_with_delay_and_side_set(pio::OutDestination::X, 1, T3 - 1, 0);
-            // Do start bit
-            a.jmp_with_delay_and_side_set(pio::JmpCondition::XIsZero, &mut do_zero, T1 - 1, 1);
-            // Do data bit = 1
-            a.jmp_with_delay_and_side_set(pio::JmpCondition::Always, &mut wrap_target, T2 - 1, 1);
-            a.bind(&mut do_zero);
-            // Do data bit = 0
-            a.nop_with_delay_and_side_set(T2 - 1, 0);
-            a.bind(&mut wrap_source);
-
-            let prg = a.assemble_with_wrap(wrap_source, wrap_target);
-            let prg = common.load_program(&prg);
-
-            Self { prg }
-        }
-    }
-
-    /// Pio backed ws2812 driver
-    /// Const N is the number of ws2812 leds attached to this pin
-    pub struct PioWs2812<'d, P: Instance, const S: usize, const N: usize> {
-        dma: PeripheralRef<'d, AnyChannel>,
-        sm: StateMachine<'d, P, S>,
-    }
-
-    impl<'d, P: Instance, const S: usize, const N: usize> PioWs2812<'d, P, S, N> {
-        /// Configure a pio state machine to use the loaded ws2812 program.
-        pub fn new(
-            pio: &mut Common<'d, P>,
-            mut sm: StateMachine<'d, P, S>,
-            dma: impl Peripheral<P = impl Channel> + 'd,
-            pin: impl PioPin,
-            program: &PioWs2812Program<'d, P>,
-        ) -> Self {
-            into_ref!(dma);
-
-            // Setup sm0
-            let mut cfg = Config::default();
-
-            // Pin config
-            let out_pin = pio.make_pio_pin(pin);
-            cfg.set_out_pins(&[&out_pin]);
-            cfg.set_set_pins(&[&out_pin]);
-
-            cfg.use_program(&program.prg, &[&out_pin]);
-
-            // Clock config, measured in kHz to avoid overflows
-            let clock_freq = U24F8::from_num(clk_sys_freq() / 1000);
-            let ws2812_freq = U24F8::from_num(800);
-            let bit_freq = ws2812_freq * CYCLES_PER_BIT;
-            cfg.clock_divider = clock_freq / bit_freq;
-
-            // FIFO config
-            cfg.fifo_join = FifoJoin::TxOnly;
-            cfg.shift_out = ShiftConfig {
-                auto_fill: true,
-                threshold: 24,
-                direction: ShiftDirection::Left,
-            };
-
-            sm.set_config(&cfg);
-            sm.set_enable(true);
-
-            Self {
-                dma: dma.map_into(),
-                sm,
-            }
-        }
-
-        /// Write a buffer of [smart_leds::RGB8] to the ws2812 string
-        pub async fn write(&mut self, colors: &[RGB8; N]) {
-            // Precompute the word bytes from the colors
-            let mut words = [0u32; N];
-            for i in 0..N {
-                let word = (u32::from(colors[i].g) << 24)
-                    | (u32::from(colors[i].r) << 16)
-                    | (u32::from(colors[i].b) << 8);
-                words[i] = word;
-            }
-
-            // DMA transfer
-            self.sm.tx().dma_push(self.dma.reborrow(), &words).await;
-
-            Timer::after_micros(55).await;
-        }
-    }
-}
-
-pub mod effects {
-
-    use smart_leds::{brightness, SmartLedsWrite, RGB8};
-
-    use crate::prelude::*;
-
-    pub fn kitt<WS: SmartLedsWrite<Color = RGB8, Error = Error>>(
-        ws: &mut WS,
-        colors: &mut dyn Iterator<Item = RGB8>,
-        data: &mut [RGB8; NUM_LEDS],
-    ) {
-        let up = 0..MATRIX_WIDTH;
-        let down = (0..MATRIX_WIDTH).rev();
-        let pause = core::iter::repeat(20).take(100);
-        let pause_short = core::iter::repeat(20).take(20);
-        let seq = up.chain(pause_short).chain(down).chain(pause);
-        for cur in seq {
-            data.iter_mut().for_each(|v| {
-                *v = brightness(core::iter::once(*v), 210).next().unwrap();
-            });
-            if cur < MATRIX_WIDTH {
-                let c = colors.next().unwrap();
-
-                for y in 0..MATRIX_HEIGHT {
-                    set_matrix(cur, y, c, data);
-                }
-            }
-            ws.write(brightness(data.iter().cloned(), 32)).unwrap();
-        }
-    }
-}
-
 pub use smart_leds::RGB8;
+pub mod app;
+pub mod bitzet;
+pub mod canvas;
+pub mod color;
+pub mod effects;
+pub mod hex;
+pub mod math;
+pub mod power_zones;
+pub mod ws2812;
 
 pub const NUM_LEDS: usize = 291;
 const MATRIX_MAP: [i16; 21 * 19] = [
@@ -206,6 +41,11 @@ pub enum Error {
     OutOfBounds,
 }
 
+pub fn set_matrix_oddr(v: math::Vec2, color: RGB8, data: &mut [RGB8; NUM_LEDS]) {
+    match set_matrix((v.x + 10) as usize, (v.y + 10) as usize, color, data) {
+        _ => (),
+    }
+}
 pub fn set_matrix(
     x: usize,
     y: usize,
@@ -235,6 +75,10 @@ pub fn get_matrix(x: usize, y: usize, data: &mut [RGB8; NUM_LEDS]) -> Result<(i1
 }
 pub mod prelude {
     pub use super::{
+        app,
+        canvas,
+        color,
+        color::Rainbow,
         get_matrix,
         // app, canvas::Canvas, color, color::Rainbow, effects, get_matrix, hal, power_zones,
         // set_matrix, set_matrix_oddr, Console,
