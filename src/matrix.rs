@@ -103,11 +103,11 @@ pub fn adjacent(v: Vec2) -> [Vec2; 6] {
         Vec2::new(1, 0),
         Vec2::new(-1, 0),
         Vec2::new(-1 + xshift, 1),
-        Vec2::new(0 + xshift, 1),
+        Vec2::new(xshift, 1),
         Vec2::new(-1 + xshift, -1),
-        Vec2::new(0 + xshift, -1),
+        Vec2::new(xshift, -1),
     ];
 
-    d.iter_mut().for_each(|f| *f = *f + v);
+    d.iter_mut().for_each(|f| *f += v);
     d
 }

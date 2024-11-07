@@ -3,7 +3,7 @@ use smart_leds::brightness;
 
 use crate::math::Vec2;
 use crate::prelude::*;
-use crate::{color::WHITE, hex::prelude::*};
+use crate::hex::prelude::*;
 use micromath::F32Ext;
 
 pub struct Drawing {
@@ -38,7 +38,7 @@ impl app::App for Drawing {
         let v = Vec2::new((s * 90f32) as i32, (c * 90f32) as i32);
 
         canvas.line(
-            v0.into(),
+            v0,
             v.into(),
             brightness(&mut self.rainbow, 32).next().unwrap(),
         );

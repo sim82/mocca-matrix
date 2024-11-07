@@ -14,7 +14,7 @@ pub trait Canvas {
 
 impl Canvas for [RGB8; NUM_LEDS] {
     fn line(&mut self, a: hex::Cube, b: hex::Cube, color: RGB8) {
-        for c in hex::CubeLinedraw::new(a.into(), b.into()) {
+        for c in hex::CubeLinedraw::new(a, b) {
             set_matrix_oddr(c.into(), color, self);
         }
     }

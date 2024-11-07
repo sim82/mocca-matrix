@@ -96,7 +96,7 @@ impl app::App for Hexlife2 {
             for v in self.black.iter() {
                 let n = adjacent(v)
                     .iter()
-                    .filter(|v| self.black.contains(*v))
+                    .filter(|v| self.black.contains(v))
                     .count();
                 if (1..=2).contains(&n) {
                     black_new.insert(v);
@@ -113,7 +113,7 @@ impl app::App for Hexlife2 {
             for v in white.iter() {
                 let n = adjacent(v)
                     .iter()
-                    .filter(|v| self.black.contains(*v))
+                    .filter(|v| self.black.contains(v))
                     .count();
                 if n == 2 && v.x.abs() < 15 && v.y.abs() < 15 {
                     black_new.insert(v);
@@ -149,9 +149,9 @@ impl app::App for Hexlife2 {
                 .zip(self.last.iter().zip(self.next.iter()))
             {
                 let h =
-                    last.h as i32 + (next.h as i32 - last.h as i32) * (self.f as i32) / LERP_TIME;
+                    last.h as i32 + (next.h as i32 - last.h as i32) * self.f / LERP_TIME;
                 let v =
-                    last.v as i32 + (next.v as i32 - last.v as i32) * (self.f as i32) / LERP_TIME;
+                    last.v as i32 + (next.v as i32 - last.v as i32) * self.f / LERP_TIME;
 
                 *out = (&HV8 {
                     h: h as u8,

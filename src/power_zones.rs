@@ -19,7 +19,7 @@ fn rgb8_to_power(c: &smart_leds::RGB8) -> u32 {
 }
 
 fn estimate_current(data: &[smart_leds::RGB8]) -> u32 {
-    data.iter().map(|c| rgb8_to_power(c)).sum::<u32>()
+    data.iter().map(rgb8_to_power).sum::<u32>()
 }
 
 pub fn estimate_current_all(data: &[smart_leds::RGB8; NUM_LEDS]) -> [u32; NUM_ZONES] {

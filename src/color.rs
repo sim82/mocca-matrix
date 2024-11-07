@@ -96,10 +96,10 @@ const GAMMA8: [u16; 256] = [
     223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252, 255,
 ];
 
-impl Into<RGB8> for &HV8 {
-    fn into(self) -> RGB8 {
-        let RGB8 { r, g, b } = wheel(self.h);
-        let v = self.v as usize;
+impl From<&HV8> for RGB8 {
+    fn from(val: &HV8) -> Self {
+        let RGB8 { r, g, b } = wheel(val.h);
+        let v = val.v as usize;
         RGB8::new(
             (r as u16 * GAMMA8[v] / 255u16) as u8,
             (g as u16 * GAMMA8[v] / 255u16) as u8,

@@ -81,7 +81,7 @@ impl From<super::hex::Cube> for Vec2 {
 
 impl From<&Vec2> for Vec2 {
     fn from(v: &Vec2) -> Self {
-        v.clone()
+        *v
     }
 }
 

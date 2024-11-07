@@ -104,6 +104,12 @@ fn test_iter_4q() {
     println!("s: {:?}", s);
 }
 
+impl<const N: usize> Default for Bitzet<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const N: usize> Bitzet<N> {
     pub fn new() -> Bitzet<N> {
         Bitzet {
@@ -118,10 +124,10 @@ impl<const N: usize> Bitzet<N> {
         self.max[q] = self.max[q].max(z);
     }
     pub fn remove(&mut self, v: &Vec2) {
-        self.quadrants[quadrant_index(&v)].bit_reset(zorder_abs(&v));
+        self.quadrants[quadrant_index(v)].bit_reset(zorder_abs(v));
     }
     pub fn get(&self, v: &Vec2) -> bool {
-        self.quadrants[quadrant_index(&v)].bit_test(zorder_abs(v))
+        self.quadrants[quadrant_index(v)].bit_test(zorder_abs(v))
     }
     pub fn contains(&self, v: &Vec2) -> bool {
         // println!("contains: {:?}", v);
@@ -137,21 +143,21 @@ impl<const N: usize> Bitzet<N> {
         // self.quadrants.iter().map(|q| q.bit_count()).sum::<usize>()
     }
     pub fn difference(&self, other: &Self) -> Self {
-        let mut q0 = self.quadrants[0].clone();
+        let mut q0 = self.quadrants[0];
         q0.bit_andnot(&other.quadrants[0]);
-        let mut q1 = self.quadrants[1].clone();
+        let mut q1 = self.quadrants[1];
         q1.bit_andnot(&other.quadrants[1]);
-        let mut q2 = self.quadrants[2].clone();
+        let mut q2 = self.quadrants[2];
         q2.bit_andnot(&other.quadrants[2]);
-        let mut q3 = self.quadrants[3].clone();
+        let mut q3 = self.quadrants[3];
         q3.bit_andnot(&other.quadrants[3]);
 
         Bitzet {
             quadrants: [q0, q1, q2, q3],
-            max: self.max.clone(),
+            max: self.max,
         }
     }
-    pub fn iter<'a>(&'a self) -> ZOrderIterator<'a, N> {
+    pub fn iter(&self) -> ZOrderIterator<'_, N> {
         ZOrderIterator {
             s: self,
             quadrant: 0,
@@ -184,7 +190,7 @@ fn quadrant_index(v: &Vec2) -> usize {
     yneg * 2 + xneg
 }
 fn zorder_abs(v: &Vec2) -> usize {
-    zorder(v.x.abs() as u32, v.y.abs() as u32) as usize
+    zorder(v.x.unsigned_abs(), v.y.unsigned_abs()) as usize
 }
 fn zorder(mut x: u32, mut y: u32) -> u32 {
     // from https://graphics.stanford.edu/~seander/bithacks.html

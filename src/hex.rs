@@ -22,7 +22,7 @@ impl Cube {
 
 impl From<&Cube> for Cube {
     fn from(c: &Cube) -> Self {
-        c.clone()
+        *c
     }
 }
 
@@ -146,11 +146,11 @@ fn cube_round(x: f32, y: f32, z: f32) -> Cube {
         rz = -rx - ry
     }
 
-    return Cube {
+    Cube {
         x: rx as i32,
         y: ry as i32,
         z: rz as i32,
-    };
+    }
 }
 
 fn cube_distance(a: &Cube, b: &Cube) -> i32 {

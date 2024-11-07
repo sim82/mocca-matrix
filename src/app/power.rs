@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::{color::WHITE, hex::prelude::*};
 
 pub struct Power {
     i: usize,
