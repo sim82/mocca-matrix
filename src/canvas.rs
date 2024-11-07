@@ -1,8 +1,9 @@
 use smart_leds::RGB8;
 
-use crate::{color, set_matrix_oddr, NUM_LEDS};
+use crate::color;
 
 use super::hex;
+use crate::prelude::*;
 
 pub trait Canvas {
     fn clear(&mut self);

@@ -1,4 +1,4 @@
-use super::NUM_LEDS;
+use crate::matrix::NUM_LEDS;
 
 const START0: usize = 0;
 const SIZE0: usize = 8 + 9 + 10 + 11 + 15 + 16 + 17;

@@ -1,7 +1,4 @@
-use bitset_core::BitSet;
-use smart_leds::brightness;
-
-use crate::{bitzet::Bitzet, math::Vec2, prelude::*, Error};
+use crate::{bitzet::Bitzet, math::Vec2, prelude::*};
 
 type BitzetN = Bitzet<128>;
 // const LERP_TIME: i32 = 60 * 1;
@@ -9,46 +6,6 @@ type BitzetN = Bitzet<128>;
 
 const LERP_TIME: i32 = 60 * 5;
 const PAUSE_TIME: i32 = 60 * 10;
-
-#[derive(Clone, Copy)]
-pub struct HV8 {
-    pub h: u8,
-    pub v: u8,
-}
-
-impl HV8 {
-    pub fn zero() -> HV8 {
-        HV8 { h: 0, v: 0 }
-    }
-}
-
-const GAMMA8: [u16; 256] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5,
-    5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 9, 10, 10, 10, 11, 11, 11, 12, 12, 13, 13, 13, 14,
-    14, 15, 15, 16, 16, 17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 24, 24, 25, 25, 26, 27,
-    27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 35, 36, 37, 38, 39, 39, 40, 41, 42, 43, 44, 45, 46,
-    47, 48, 49, 50, 50, 51, 52, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 68, 69, 70, 72,
-    73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 89, 90, 92, 93, 95, 96, 98, 99, 101, 102, 104,
-    105, 107, 109, 110, 112, 114, 115, 117, 119, 120, 122, 124, 126, 127, 129, 131, 133, 135, 137,
-    138, 140, 142, 144, 146, 148, 150, 152, 154, 156, 158, 160, 162, 164, 167, 169, 171, 173, 175,
-    177, 180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213, 215, 218, 220,
-    223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252, 255,
-];
-
-impl Into<RGB8> for &HV8 {
-    fn into(self) -> RGB8 {
-        let RGB8 { r, g, b } = color::wheel(self.h);
-        let v = self.v as usize;
-        RGB8::new(
-            (r as u16 * GAMMA8[v] / 255u16) as u8,
-            (g as u16 * GAMMA8[v] / 255u16) as u8,
-            (b as u16 * GAMMA8[v] / 255u16) as u8,
-        )
-        // let rgb = color::wheel(self.h);
-        // brightness(iter, brightness)
-    }
-}
 
 pub struct Hexlife2 {
     black: BitzetN,
@@ -63,50 +20,6 @@ pub struct Hexlife2 {
 
     next: [HV8; NUM_LEDS],
     f: i32,
-}
-
-pub fn set_matrix_hv(
-    x: usize,
-    y: usize,
-    hv: &HV8,
-    data: &mut [HV8; NUM_LEDS],
-) -> Result<i16, Error> {
-    if x >= MATRIX_WIDTH || y >= MATRIX_HEIGHT {
-        return Err(Error::OutOfBounds);
-    }
-    let addr = x + y * MATRIX_WIDTH;
-    let led = crate::MATRIX_MAP.get(addr).ok_or(Error::OutOfBounds)?;
-    let out = data.get_mut(*led as usize).ok_or(Error::OutOfBounds)?;
-    *out = *hv;
-    Ok(*led)
-}
-
-pub fn led_addr(x: usize, y: usize) -> Result<usize, Error> {
-    if x >= MATRIX_WIDTH || y >= MATRIX_HEIGHT {
-        return Err(Error::OutOfBounds);
-    }
-    let addr = x + y * MATRIX_WIDTH;
-    let led = crate::MATRIX_MAP.get(addr).ok_or(Error::OutOfBounds)?;
-    if *led >= 0 && (*led as usize) < crate::NUM_LEDS {
-        Ok(*led as usize)
-    } else {
-        Err(Error::OutOfBounds)
-    }
-}
-
-fn adjacent(v: Vec2) -> [Vec2; 6] {
-    let xshift = v.y.abs() % 2;
-    let mut d = [
-        Vec2::new(1, 0),
-        Vec2::new(-1, 0),
-        Vec2::new(-1 + xshift, 1),
-        Vec2::new(0 + xshift, 1),
-        Vec2::new(-1 + xshift, -1),
-        Vec2::new(0 + xshift, -1),
-    ];
-
-    d.iter_mut().for_each(|f| *f = *f + v);
-    d
 }
 
 pub fn new() -> Hexlife2 {
@@ -129,18 +42,18 @@ pub fn new() -> Hexlife2 {
                 Some('w') => x -= 1,
                 Some('s') => match c.next() {
                     Some('e') => {
-                        x += (y.abs() % 2);
+                        x += y.abs() % 2;
                         y += 1
                     }
                     Some('w') => {
                         y += 1;
-                        x -= (y.abs() % 2);
+                        x -= y.abs() % 2;
                     }
                     _ => break,
                 },
                 Some('n') => match c.next() {
                     Some('e') => {
-                        x += (y.abs() % 2);
+                        x += y.abs() % 2;
                         y -= 1
                     }
                     Some('w') => {
