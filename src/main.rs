@@ -113,29 +113,10 @@ impl LedStrip {
 #[embassy_executor::task]
 async fn rgb_task(mut ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
     let mut led_strip = LedStrip::new(ws2812);
-    // This is the number of leds in the string. Helpfully, the sparkfun thing plus and adafruit
-    // feather boards for the 2040 both have one built in.
-    // let mut data = [RGB8::default(); NUM_LEDS];
     let mut ticker = Ticker::every(Duration::from_millis(16));
-    // let mut dynamic_limit = [DynamicLimit::default(); NUM_ZONES];
-    // let mut count = 0u32;
-    // loop {
-    //     for j in 0..(256 * 5) {
-    //         // debug!("New Colors:");
-    //         for i in 0..NUM_LEDS {
-    //             led_strip.data[i] =
-    //                 wheel((((i * 256) as u16 / NUM_LEDS as u16 + j as u16) & 255) as u8);
-    //             // debug!("R: {} G: {} B: {}", data[i].r, data[i].g, data[i].b);
-    //         }
-
-    //         led_strip.write().await;
-
-    //         ticker.next().await;
-    //     }
-    // }
-    // let mut app = app::drawing::new();
     let mut splash = app::drawing::new();
     let mut app = app::hexlife2::new();
+    // let mut app = app::power::new();
     loop {
         // led_strip.data.fill([255, 255, 255].into());
         if led_strip.count < 100 {
