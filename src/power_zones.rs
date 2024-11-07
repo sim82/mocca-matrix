@@ -108,13 +108,7 @@ impl DynamicLimit {
 
         if energy > budget {
             let f = energy as f32 / budget as f32;
-            let f = if f < 1.0 {
-                1.0
-            } else if f > 2.0 {
-                2.0
-            } else {
-                f
-            };
+            let f = f.clamp(1.0, 2.0);
             self.limit = CURRENT_RATED + ((CURRENT_MAX - CURRENT_RATED) as f32 * (2.0 - f)) as u32;
         }
     }

@@ -37,9 +37,7 @@ pub enum Error {
 }
 
 pub fn set_matrix_oddr(v: math::Vec2, color: RGB8, data: &mut [RGB8; NUM_LEDS]) {
-    match set_matrix((v.x + 10) as usize, (v.y + 10) as usize, color, data) {
-        _ => (),
-    }
+    let _ = set_matrix((v.x + 10) as usize, (v.y + 10) as usize, color, data);
 }
 
 pub fn set_matrix(

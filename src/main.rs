@@ -53,21 +53,6 @@ bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
 
-/// Input a value 0 to 255 to get a color value
-/// The colours are a transition r - g - b - back to r.
-fn wheel(mut wheel_pos: u8) -> RGB8 {
-    wheel_pos = 255 - wheel_pos;
-    if wheel_pos < 85 {
-        return (255 - wheel_pos * 3, 0, wheel_pos * 3).into();
-    }
-    if wheel_pos < 170 {
-        wheel_pos -= 85;
-        return (0, wheel_pos * 3, 255 - wheel_pos * 3).into();
-    }
-    wheel_pos -= 170;
-    (wheel_pos * 3, 255 - wheel_pos * 3, 0).into()
-}
-
 #[embassy_executor::task]
 async fn blink_task(mut led: Output<'static>) {
     loop {
@@ -111,7 +96,7 @@ impl LedStrip {
 }
 // const NUM_LEDS: usize = 8;
 #[embassy_executor::task]
-async fn rgb_task(mut ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
+async fn rgb_task(ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
     let mut led_strip = LedStrip::new(ws2812);
     let mut ticker = Ticker::every(Duration::from_millis(16));
     let mut splash = app::drawing::new();

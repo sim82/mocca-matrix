@@ -20,7 +20,7 @@ pub fn kitt<WS: SmartLedsWrite<Color = RGB8, Error = Error>>(
             let c = colors.next().unwrap();
 
             for y in 0..MATRIX_HEIGHT {
-                set_matrix(cur, y, c, data);
+                let _ = set_matrix(cur, y, c, data);
             }
         }
         ws.write(brightness(data.iter().cloned(), 32)).unwrap();

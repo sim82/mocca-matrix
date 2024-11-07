@@ -1,4 +1,3 @@
-#[feature(min_const_generics)]
 use core::iter::FromIterator;
 
 use crate::math::Vec2;
@@ -101,6 +100,12 @@ impl<const N: usize> Bitzet<N> {
 
         // self.quadrants.iter().map(|q| q.bit_count()).sum::<usize>()
     }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn difference(&self, other: &Self) -> Self {
         let mut q0 = self.quadrants[0];
         q0.bit_andnot(&other.quadrants[0]);

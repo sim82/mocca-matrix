@@ -24,18 +24,18 @@ pub struct Hexlife2 {
 
 pub fn new() -> Hexlife2 {
     let mut black = BitzetN::new();
-    for (i, line) in input().iter().enumerate() {
+    for line in input().iter() {
         let mut c = line.chars();
         let mut x = 0i32;
         let mut y = 0i32;
 
         // data[i % NUM_LEDS] = RGB8::new(0, 255, 0);
         // let mut prev = None;
-        fn reset_prev(prev: Option<(i16, RGB8)>, data: &mut [RGB8]) {
-            if let Some((led, color)) = prev {
-                data[led as usize] = color;
-            }
-        }
+        // fn reset_prev(prev: Option<(i16, RGB8)>, data: &mut [RGB8]) {
+        //     if let Some((led, color)) = prev {
+        //         data[led as usize] = color;
+        //     }
+        // }
         loop {
             match c.next() {
                 Some('e') => x += 1,
@@ -106,7 +106,7 @@ impl app::App for Hexlife2 {
             let white = self
                 .black
                 .iter()
-                .flat_map(|v| core::array::IntoIter::new(adjacent(v)))
+                .flat_map(|v| adjacent(v).into_iter())
                 .collect::<BitzetN>();
 
             let white = white.difference(&self.black);
@@ -148,10 +148,8 @@ impl app::App for Hexlife2 {
                 .iter_mut()
                 .zip(self.last.iter().zip(self.next.iter()))
             {
-                let h =
-                    last.h as i32 + (next.h as i32 - last.h as i32) * self.f / LERP_TIME;
-                let v =
-                    last.v as i32 + (next.v as i32 - last.v as i32) * self.f / LERP_TIME;
+                let h = last.h as i32 + (next.h as i32 - last.h as i32) * self.f / LERP_TIME;
+                let v = last.v as i32 + (next.v as i32 - last.v as i32) * self.f / LERP_TIME;
 
                 *out = (&HV8 {
                     h: h as u8,
