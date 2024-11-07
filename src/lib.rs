@@ -46,6 +46,7 @@ pub fn set_matrix_oddr(v: math::Vec2, color: RGB8, data: &mut [RGB8; NUM_LEDS]) 
         _ => (),
     }
 }
+
 pub fn set_matrix(
     x: usize,
     y: usize,

@@ -63,6 +63,7 @@ pub fn limit_current(
 const CURRENT_MAX: u32 = 1100;
 const CURRENT_RATED: u32 = 500;
 const NUM_MEASUREMENTS: usize = 60;
+
 #[derive(Copy, Clone)]
 pub struct DynamicLimit {
     measurements: [u32; NUM_MEASUREMENTS],
