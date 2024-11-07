@@ -63,47 +63,6 @@ impl<const N: usize> FromIterator<Vec2> for Bitzet<N> {
         bz
     }
 }
-
-#[test]
-#[cfg(test)]
-fn test_iter_basic() {
-    let mut bs = Bitzet::new();
-    bs.insert(Vec2::new(1, 1));
-    bs.insert(Vec2::new(2, 1));
-    bs.insert(Vec2::new(3, 1));
-
-    let mut bs2 = Bitzet::new();
-    bs2.insert(Vec2(2, 1));
-    let bs3 = bs.difference(&bs2);
-    let s = bs3.iter().collect::<Vec<_>>();
-    println!("s: {:?}", s);
-}
-
-#[test]
-fn test_iter_4q() {
-    let mut bs = Bitzet::new();
-    bs.insert(Vec2::new(1, 1));
-    bs.insert(Vec2::new(2, 1));
-    bs.insert(Vec2::new(3, 1));
-
-    bs.insert(Vec2::new(-5, 2));
-    bs.insert(Vec2::new(3, -7));
-    bs.insert(Vec2::new(-12, -13));
-
-    bs.insert(Vec2::new(-5, 1));
-    bs.insert(Vec2::new(2, -7));
-    bs.insert(Vec2::new(-11, -13));
-
-    let mut bs2 = Bitzet::new();
-    bs2.insert(Vec2::new(2, 1));
-    bs2.insert(Vec2::new(-5, 2));
-    bs2.insert(Vec2::new(3, -7));
-    bs2.insert(Vec2::new(-12, -13));
-    let bs3 = bs.difference(&bs2);
-    let s = bs3.iter().collect::<Vec<_>>();
-    println!("s: {:?}", s);
-}
-
 impl<const N: usize> Default for Bitzet<N> {
     fn default() -> Self {
         Self::new()
@@ -165,25 +124,6 @@ impl<const N: usize> Bitzet<N> {
         }
     }
 }
-
-#[test]
-fn test_len() {
-    println!("z: {}", zorder(255, 255));
-    let bz = [
-        Vec2::new(1, 1),
-        Vec2::new(255, 255),
-        Vec2::new(-1, 1),
-        Vec2::new(-255, 255),
-        Vec2::new(1, -1),
-        Vec2::new(255, -255),
-        Vec2::new(-1, -1),
-        Vec2::new(-255, -255),
-    ]
-    .iter()
-    .cloned()
-    .collect::<Bitzet>();
-    assert_eq!(bz.len(), 8);
-}
 fn quadrant_index(v: &Vec2) -> usize {
     let xneg = if v.x < 0 { 1 } else { 0 };
     let yneg = if v.y < 0 { 1 } else { 0 };
@@ -215,14 +155,6 @@ fn zorder(mut x: u32, mut y: u32) -> u32 {
 
     x | (y << 1)
 }
-#[test]
-fn zorder3_test() {
-    assert_eq!(zorder(0, 0), 0);
-    assert_eq!(zorder(3, 5), 0b100111);
-    assert_eq!(zorder(6, 2), 0b011100);
-    assert_eq!(zorder(7, 7), 0b111111);
-}
-
 fn zorder_inverse(z: u32) -> Vec2 {
     let mut x = z & 0x55555555;
     x = (x | (x >> 1)) & 0x33333333;
@@ -239,31 +171,102 @@ fn zorder_inverse(z: u32) -> Vec2 {
     Vec2::new(x as i32, y as i32)
 }
 
-#[test]
-fn test_zinv2() {
-    assert_eq!(zorder_inverse(0b0), Vec2(0, 0));
-    assert_eq!(zorder_inverse(0b100110), Vec2(0b10, 0b101));
-    assert_eq!(zorder_inverse(0b111101), Vec2(0b111, 0b110));
+// TODO: check how to run tests on host
+// #[cfg(test)]
+// mod test {
+//     use crate::bitzet::Bitzet;
+//     use crate::math::Vec2;
+//     #[test]
+//     fn test_iter_basic() {
+//         let mut bs = Bitzet::new();
+//         bs.insert(Vec2::new(1, 1));
+//         bs.insert(Vec2::new(2, 1));
+//         bs.insert(Vec2::new(3, 1));
 
-    assert_eq!(
-        zorder_inverse(0b01010101010101010101010101010101),
-        Vec2(0b1111111111111111, 0b0)
-    );
+//         let mut bs2 = Bitzet::new();
+//         bs2.insert(Vec2(2, 1));
+//         let bs3 = bs.difference(&bs2);
+//         let s = bs3.iter().collect::<Vec<_>>();
+//         println!("s: {:?}", s);
+//     }
 
-    assert_eq!(
-        zorder_inverse(0b10101010101010101010101010101010),
-        Vec2(0b0, 0b1111111111111111)
-    );
-    let v = zorder_inverse(0b111100);
-    println!("{:b} {:b}", v.x(), v.y());
-}
+//     #[test]
+//     fn test_iter_4q() {
+//         let mut bs = Bitzet::new();
+//         bs.insert(Vec2::new(1, 1));
+//         bs.insert(Vec2::new(2, 1));
+//         bs.insert(Vec2::new(3, 1));
 
-#[test]
-fn test1() {
-    let mut x = 0u32;
-    for i in 0..10 {
-        println!("x: {:b}", x);
+//         bs.insert(Vec2::new(-5, 2));
+//         bs.insert(Vec2::new(3, -7));
+//         bs.insert(Vec2::new(-12, -13));
 
-        x = (x + 0xaaaaaaab) & 0x55555555;
-    }
-}
+//         bs.insert(Vec2::new(-5, 1));
+//         bs.insert(Vec2::new(2, -7));
+//         bs.insert(Vec2::new(-11, -13));
+
+//         let mut bs2 = Bitzet::new();
+//         bs2.insert(Vec2::new(2, 1));
+//         bs2.insert(Vec2::new(-5, 2));
+//         bs2.insert(Vec2::new(3, -7));
+//         bs2.insert(Vec2::new(-12, -13));
+//         let bs3 = bs.difference(&bs2);
+//         let s = bs3.iter().collect::<Vec<_>>();
+//         println!("s: {:?}", s);
+//     }
+
+//     #[test]
+//     fn test_len() {
+//         println!("z: {}", zorder(255, 255));
+//         let bz = [
+//             Vec2::new(1, 1),
+//             Vec2::new(255, 255),
+//             Vec2::new(-1, 1),
+//             Vec2::new(-255, 255),
+//             Vec2::new(1, -1),
+//             Vec2::new(255, -255),
+//             Vec2::new(-1, -1),
+//             Vec2::new(-255, -255),
+//         ]
+//         .iter()
+//         .cloned()
+//         .collect::<Bitzet>();
+//         assert_eq!(bz.len(), 8);
+//     }
+//     #[test]
+//     fn zorder3_test() {
+//         assert_eq!(zorder(0, 0), 0);
+//         assert_eq!(zorder(3, 5), 0b100111);
+//         assert_eq!(zorder(6, 2), 0b011100);
+//         assert_eq!(zorder(7, 7), 0b111111);
+//     }
+
+//     #[test]
+//     fn test_zinv2() {
+//         assert_eq!(zorder_inverse(0b0), Vec2(0, 0));
+//         assert_eq!(zorder_inverse(0b100110), Vec2(0b10, 0b101));
+//         assert_eq!(zorder_inverse(0b111101), Vec2(0b111, 0b110));
+
+//         assert_eq!(
+//             zorder_inverse(0b01010101010101010101010101010101),
+//             Vec2(0b1111111111111111, 0b0)
+//         );
+
+//         assert_eq!(
+//             zorder_inverse(0b10101010101010101010101010101010),
+//             Vec2(0b0, 0b1111111111111111)
+//         );
+//         let v = zorder_inverse(0b111100);
+//         println!("{:b} {:b}", v.x(), v.y());
+//     }
+
+//     #[test]
+//     fn test1() {
+//         let mut x = 0u32;
+//         for i in 0..10 {
+//             println!("x: {:b}", x);
+
+//             x = (x + 0xaaaaaaab) & 0x55555555;
+//         }
+//     }
+// }
