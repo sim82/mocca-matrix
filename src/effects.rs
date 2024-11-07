@@ -2,7 +2,7 @@ use smart_leds::{brightness, SmartLedsWrite, RGB8};
 
 use crate::prelude::*;
 
-pub fn kitt<WS: SmartLedsWrite<Color = RGB8, Error = hal::spi::Error>>(
+pub fn kitt<WS: SmartLedsWrite<Color = RGB8, Error = Error>>(
     ws: &mut WS,
     colors: &mut dyn Iterator<Item = RGB8>,
     data: &mut [RGB8; NUM_LEDS],

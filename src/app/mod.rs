@@ -1,7 +1,7 @@
 pub mod drawing;
-pub mod hexlife;
+// pub mod hexlife;
 pub mod hexlife2;
-pub mod power;
+// pub mod power;
 use crate::prelude::*;
 
 pub trait App {

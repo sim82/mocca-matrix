@@ -1,3 +1,4 @@
+use canvas::Canvas;
 use smart_leds::brightness;
 
 use crate::math::Vec2;

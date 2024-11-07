@@ -1,257 +1,170 @@
-#![no_main]
+// //! This example test the RP Pico on board LED.
+// //!
+// //! It does not work with the RP Pico W board. See wifi_blinky.rs.
+
+// #![no_std]
+// #![no_main]
+
+// use defmt::*;
+// use embassy_executor::Spawner;
+// use embassy_rp::gpio;
+// use embassy_time::Timer;
+// use gpio::{Level, Output};
+// use {defmt_rtt as _, panic_probe as _};
+
+// #[embassy_executor::main]
+// async fn main(_spawner: Spawner) {
+//     let p = embassy_rp::init(Default::default());
+//     let mut led = Output::new(p.PIN_25, Level::Low);
+
+//     loop {
+//         info!("led on!");
+//         led.set_high();
+//         Timer::after_secs(1).await;
+
+//         info!("led off!");
+//         led.set_low();
+//         Timer::after_secs(1).await;
+//     }
+// }
+
+//! This example shows powerful PIO module in the RP2040 chip to communicate with WS2812 LED modules.
+//! See (https://www.sparkfun.com/categories/tags/ws2812)
+
 #![no_std]
+#![no_main]
 
-extern crate panic_halt;
+use app::App;
+use defmt::*;
+use embassy_executor::Spawner;
+use embassy_rp::bind_interrupts;
+use embassy_rp::gpio::{Level, Output};
+use embassy_rp::peripherals::PIO0;
+use embassy_rp::pio::{InterruptHandler, Pio};
+// use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
+use embassy_time::{Duration, Ticker, Timer};
+use mocca_matrix_embassy::power_zones::{DynamicLimit, NUM_ZONES};
+use mocca_matrix_embassy::ws2812::{PioWs2812, PioWs2812Program};
+use mocca_matrix_embassy::{power_zones, prelude::*};
+use smart_leds::RGB8;
+use {defmt_rtt as _, panic_probe as _};
 
-extern crate stm32l4xx_hal as hal;
+bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => InterruptHandler<PIO0>;
+});
 
-use mocca_matrix_rtic::{app::App, hex::Hex, prelude::*};
-use smart_leds::{brightness, RGB8};
-use ws2812::Ws2812;
-
-use core::fmt::Write;
-use embedded_graphics::{fonts, pixelcolor, prelude::*, style};
-use hal::{
-    device::I2C1,
-    gpio::gpioa::PA0,
-    gpio::{
-        Alternate, Edge, Floating, Input, OpenDrain, Output, PullUp, PushPull, PA1, PA5, PA6, PA7,
-        PB6, PB7, PB8, PB9,
-    },
-    i2c::I2c,
-    prelude::*,
-    spi::Spi,
-    stm32,
-    timer::{Event, Timer},
-};
-use hal::{
-    gpio::PC13,
-    stm32l4::stm32l4x2::{interrupt, Interrupt, NVIC},
-};
-use heapless::consts::*;
-use heapless::String;
-use rtic::cyccnt::U32Ext;
-use smart_leds::SmartLedsWrite;
-use ssd1306::{mode::GraphicsMode, prelude::*, Builder, I2CDIBuilder};
-use ws2812_spi as ws2812;
-
-const REFRESH_DISPLAY_PERIOD: u32 = 64_000_000 / 20;
-const REFRESH_LED_STRIP_PERIOD: u32 = 64_000_000 / 60;
-
-#[rtic::app(device = hal::stm32, peripherals = true, monotonic = rtic::cyccnt::CYCCNT)]
-const APP: () = {
-    struct Resources {
-        timer: Timer<stm32::TIM7>,
-        disp: GraphicsMode<
-            I2CInterface<
-                I2c<
-                    I2C1,
-                    (
-                        PB6<Alternate<hal::gpio::AF4, Output<OpenDrain>>>,
-                        PB7<Alternate<hal::gpio::AF4, Output<OpenDrain>>>,
-                    ),
-                >,
-            >,
-            DisplaySize128x64,
-        >,
-        led_strip_dev: ws2812_spi::Ws2812<
-            Spi<
-                hal::pac::SPI1,
-                (
-                    PA5<Alternate<hal::gpio::AF5, Input<Floating>>>,
-                    PA6<Alternate<hal::gpio::AF5, Input<Floating>>>,
-                    PA7<Alternate<hal::gpio::AF5, Input<Floating>>>,
-                ),
-            >,
-        >,
-        led_strip_data: [RGB8; NUM_LEDS],
-        led_strip_current: [u32; 4],
-        dynamic_limit: [power_zones::DynamicLimit; 4],
-        drawing_app: crate::app::drawing::Drawing,
-        hexlife_app: crate::app::hexlife::Hexlife,
-        hexlife2_app: crate::app::hexlife2::Hexlife2,
-        power_app: crate::app::power::Power,
-        count: u32,
-        dbg_pin: PA1<Output<PushPull>>,
+/// Input a value 0 to 255 to get a color value
+/// The colours are a transition r - g - b - back to r.
+fn wheel(mut wheel_pos: u8) -> RGB8 {
+    wheel_pos = 255 - wheel_pos;
+    if wheel_pos < 85 {
+        return (255 - wheel_pos * 3, 0, wheel_pos * 3).into();
     }
+    if wheel_pos < 170 {
+        wheel_pos -= 85;
+        return (0, wheel_pos * 3, 255 - wheel_pos * 3).into();
+    }
+    wheel_pos -= 170;
+    (wheel_pos * 3, 255 - wheel_pos * 3, 0).into()
+}
 
-    #[init(schedule = [refresh_display, refresh_led_strip])]
-    fn init(mut cx: init::Context) -> init::LateResources {
-        let mut rcc = cx.device.RCC.constrain();
-        let mut flash = cx.device.FLASH.constrain();
-        let mut pwr = cx.device.PWR.constrain(&mut rcc.apb1r1);
-        let mut cp = cx.core;
-
-        // software tasks won't work without this:
-        cp.DCB.enable_trace();
-        cp.DWT.enable_cycle_counter();
-
-        let clocks = rcc
-            .cfgr
-            .sysclk(64.mhz())
-            .pclk1(16.mhz())
-            .pclk2(64.mhz())
-            .freeze(&mut flash.acr, &mut pwr);
-
-        // ================================================================================
-        // Set up Timer interrupt
-        let mut timer = Timer::tim7(cx.device.TIM7, 4.khz(), clocks, &mut rcc.apb1r1);
-        timer.listen(Event::TimeOut);
-
-        // ================================================================================
-        // set up OLED i2c
-        let mut gpiob = cx.device.GPIOB.split(&mut rcc.ahb2);
-        let mut scl = gpiob
-            .pb6
-            .into_open_drain_output(&mut gpiob.moder, &mut gpiob.otyper);
-        scl.internal_pull_up(&mut gpiob.pupdr, true);
-        let scl = scl.into_af4(&mut gpiob.moder, &mut gpiob.afrl);
-        let mut sda = gpiob
-            .pb7
-            .into_open_drain_output(&mut gpiob.moder, &mut gpiob.otyper);
-        sda.internal_pull_up(&mut gpiob.pupdr, true);
-        let sda = sda.into_af4(&mut gpiob.moder, &mut gpiob.afrl);
-
-        let mut i2c = I2c::i2c1(
-            cx.device.I2C1,
-            (scl, sda),
-            800.khz(),
-            clocks,
-            &mut rcc.apb1r1,
-        );
-
-        let interface = I2CDIBuilder::new().init(i2c);
-        let mut disp: GraphicsMode<_, _> = Builder::new()
-            // .with_size(DisplaySize::Display128x64NoOffset)
-            .connect(interface)
-            .into();
-        disp.init().unwrap();
-        disp.flush().unwrap();
-
-        disp.write("hello world xxx!", None);
-        disp.flush().unwrap();
-        cx.schedule
-            .refresh_display(cx.start + REFRESH_DISPLAY_PERIOD.cycles())
-            .unwrap();
-
-        // ================================================================================
-        // setup smart-led strip
-        let mut gpioa = cx.device.GPIOA.split(&mut rcc.ahb2);
-        let (sck, miso, mosi) = {
-            (
-                gpioa.pa5.into_af5(&mut gpioa.moder, &mut gpioa.afrl),
-                gpioa.pa6.into_af5(&mut gpioa.moder, &mut gpioa.afrl),
-                gpioa.pa7.into_af5(&mut gpioa.moder, &mut gpioa.afrl),
-            )
-        };
-
-        // Configure SPI with 3Mhz rate
-        let spi = Spi::spi1(
-            cx.device.SPI1,
-            (sck, miso, mosi),
-            ws2812::MODE,
-            3_000_000.hz(),
-            clocks,
-            &mut rcc.apb2,
-        );
-        let led_strip_dev = Ws2812::new(spi);
-
-        cx.schedule
-            .refresh_led_strip(cx.start + REFRESH_LED_STRIP_PERIOD.cycles())
-            .unwrap();
-
-        let dbg_pin = gpioa
-            .pa1
-            .into_push_pull_output(&mut gpioa.moder, &mut gpioa.otyper);
-
-        // Initialization of late resources
-        init::LateResources {
-            timer,
-            disp,
-            led_strip_dev,
-            led_strip_data: [mocca_matrix_rtic::color::BLACK; NUM_LEDS],
-            led_strip_current: [0; 4],
+#[embassy_executor::task]
+async fn blink_task(mut led: Output<'static>) {
+    loop {
+        led.set_high();
+        Timer::after_millis(100).await;
+        led.set_low();
+        Timer::after_millis(100).await;
+    }
+}
+pub struct LedStrip {
+    pub data: [RGB8; NUM_LEDS],
+    dynamic_limit: [DynamicLimit; NUM_ZONES],
+    ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>,
+    count: u32,
+}
+impl LedStrip {
+    pub fn new(ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) -> Self {
+        Self {
+            data: [RGB8::default(); NUM_LEDS],
             dynamic_limit: Default::default(),
-            drawing_app: crate::app::drawing::new(),
-            hexlife_app: crate::app::hexlife::new(),
-            hexlife2_app: crate::app::hexlife2::new(),
-            power_app: crate::app::power::new(),
             count: 0,
-            dbg_pin,
+            ws2812,
         }
     }
-
-    #[task(schedule=[refresh_display], resources = [disp, dynamic_limit, led_strip_current], priority = 1)]
-    fn refresh_display(mut cx: refresh_display::Context) {
-        let mut text = String::<U32>::new();
-
-        let a = cx.resources.led_strip_current.lock(|x| x.clone());
-        let limit_dyn: heapless::Vec<u32, U4> = cx
-            .resources
-            .dynamic_limit
-            .lock(|x| x.iter().map(|limit| limit.get_limit()).collect());
-
-        for (i, (c, limit_dyn)) in a.iter().zip(limit_dyn.iter()).enumerate() {
-            text.clear();
-
-            write!(&mut text, "I({}): {} {}", i, c, limit_dyn).unwrap();
-            cx.resources.disp.write(&text, Some(i as i32));
-        }
-
-        text.clear();
-        write!(&mut text, "{:?}", cx.scheduled).unwrap();
-        cx.resources.disp.write(&text, Some(5));
-        cx.resources.disp.flush().unwrap();
-        cx.schedule
-            .refresh_display(cx.scheduled + REFRESH_DISPLAY_PERIOD.cycles())
-            .unwrap();
-    }
-    #[task(schedule=[refresh_led_strip], resources = [led_strip_dev, led_strip_data, led_strip_current, dynamic_limit, drawing_app, hexlife_app, hexlife2_app, power_app, count, dbg_pin], priority = 3)]
-    fn refresh_led_strip(mut cx: refresh_led_strip::Context) {
-        // let mut rainbow = brightness(cx.resources.rainbow, 64);
-        cx.resources.dbg_pin.set_low().ok();
-
-        if *cx.resources.count < 100 {
-            cx.resources.drawing_app.tick(cx.resources.led_strip_data);
-        } else {
-            cx.resources.hexlife2_app.tick(cx.resources.led_strip_data);
-        }
-
-        cx.resources.dbg_pin.set_high().ok();
-
-        *cx.resources.led_strip_current =
-            power_zones::estimate_current_all(cx.resources.led_strip_data);
-
-        cx.resources.dbg_pin.set_low().ok();
-
-        let mut limit = [0u32; power_zones::NUM_ZONES];
-        for i in 0..power_zones::NUM_ZONES {
-            cx.resources.dynamic_limit[i].add_measurement(cx.resources.led_strip_current[i]);
-            if *cx.resources.count % 32 == 0 {
-                cx.resources.dynamic_limit[i].commit();
+    pub async fn write(&mut self) {
+        let led_strip_power = power_zones::estimate_current_all(&self.data);
+        let mut limit = [0u32; NUM_ZONES];
+        for i in 0..NUM_ZONES {
+            self.dynamic_limit[i].add_measurement(led_strip_power[i]);
+            if self.count % 32 == 0 {
+                self.dynamic_limit[i].commit();
             }
-            limit[i] = cx.resources.dynamic_limit[i].get_limit();
+            limit[i] = self.dynamic_limit[i].get_limit();
         }
 
-        cx.resources.dbg_pin.set_high().ok();
-        power_zones::limit_current(&mut cx.resources.led_strip_data, &limit);
-
-        cx.resources.dbg_pin.set_low().ok();
-        cx.resources
-            .led_strip_dev
-            .write(cx.resources.led_strip_data.iter().cloned())
-            .unwrap();
-
-        cx.resources.dbg_pin.set_high().ok();
-        cx.schedule
-            .refresh_led_strip(cx.scheduled + REFRESH_LED_STRIP_PERIOD.cycles())
-            .unwrap();
-
-        *cx.resources.count = cx.resources.count.overflowing_add(1).0;
+        info!("power: {:?} {:?}", led_strip_power, limit);
+        power_zones::limit_current(&mut self.data, &limit);
+        self.count = self.count.wrapping_add(1);
+        self.ws2812.write(&self.data).await;
     }
+}
+// const NUM_LEDS: usize = 8;
+#[embassy_executor::task]
+async fn rgb_task(mut ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
+    let mut led_strip = LedStrip::new(ws2812);
+    // This is the number of leds in the string. Helpfully, the sparkfun thing plus and adafruit
+    // feather boards for the 2040 both have one built in.
+    // let mut data = [RGB8::default(); NUM_LEDS];
+    let mut ticker = Ticker::every(Duration::from_millis(16));
+    // let mut dynamic_limit = [DynamicLimit::default(); NUM_ZONES];
+    // let mut count = 0u32;
+    // loop {
+    //     for j in 0..(256 * 5) {
+    //         // debug!("New Colors:");
+    //         for i in 0..NUM_LEDS {
+    //             led_strip.data[i] =
+    //                 wheel((((i * 256) as u16 / NUM_LEDS as u16 + j as u16) & 255) as u8);
+    //             // debug!("R: {} G: {} B: {}", data[i].r, data[i].g, data[i].b);
+    //         }
 
-    extern "C" {
-        fn COMP();
-        fn SDMMC1();
+    //         led_strip.write().await;
+
+    //         ticker.next().await;
+    //     }
+    // }
+    // let mut app = app::drawing::new();
+    let mut splash = app::drawing::new();
+    let mut app = app::hexlife2::new();
+    loop {
+        // led_strip.data.fill([255, 255, 255].into());
+        if led_strip.count < 100 {
+            splash.tick(&mut led_strip.data);
+        } else {
+            app.tick(&mut led_strip.data);
+        }
+        led_strip.write().await;
+        ticker.next().await;
     }
-};
+}
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    info!("Start");
+    let p = embassy_rp::init(Default::default());
+
+    let led = Output::new(p.PIN_25, Level::Low);
+
+    let Pio {
+        mut common, sm0, ..
+    } = Pio::new(p.PIO0, Irqs);
+
+    // Common neopixel pins:
+    // Thing plus: 8
+    // Adafruit Feather: 16;  Adafruit Feather+RFM95: 4
+    let program = PioWs2812Program::new(&mut common);
+    let ws2812 = PioWs2812::new(&mut common, sm0, p.DMA_CH0, p.PIN_16, &program);
+
+    // Loop forever making RGB values and pushing them out to the WS2812.
+    unwrap!(spawner.spawn(blink_task(led)));
+    unwrap!(spawner.spawn(rgb_task(ws2812)));
+}
