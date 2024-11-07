@@ -67,9 +67,10 @@ const APP: () = {
         led_strip_data: [RGB8; NUM_LEDS],
         led_strip_current: [u32; 4],
         dynamic_limit: [power_zones::DynamicLimit; 4],
-        // app: crate::app::drawing::Drawing,
-        // app: crate::app::hexlife::Hexlife,
-        app: crate::app::power::Power,
+        drawing_app: crate::app::drawing::Drawing,
+        hexlife_app: crate::app::hexlife::Hexlife,
+        hexlife2_app: crate::app::hexlife2::Hexlife2,
+        power_app: crate::app::power::Power,
         count: u32,
         dbg_pin: PA1<Output<PushPull>>,
     }
@@ -171,9 +172,10 @@ const APP: () = {
             led_strip_data: [mocca_matrix_rtic::color::BLACK; NUM_LEDS],
             led_strip_current: [0; 4],
             dynamic_limit: Default::default(),
-            // app: crate::app::drawing::Drawing::new(),
-            // app: crate::app::hexlife::Hexlife::new(),
-            app: crate::app::power::Power::new(),
+            drawing_app: crate::app::drawing::new(),
+            hexlife_app: crate::app::hexlife::new(),
+            hexlife2_app: crate::app::hexlife2::new(),
+            power_app: crate::app::power::new(),
             count: 0,
             dbg_pin,
         }
@@ -204,12 +206,16 @@ const APP: () = {
             .refresh_display(cx.scheduled + REFRESH_DISPLAY_PERIOD.cycles())
             .unwrap();
     }
-    #[task(schedule=[refresh_led_strip], resources = [led_strip_dev, led_strip_data, led_strip_current, dynamic_limit, app, count, dbg_pin], priority = 3)]
+    #[task(schedule=[refresh_led_strip], resources = [led_strip_dev, led_strip_data, led_strip_current, dynamic_limit, drawing_app, hexlife_app, hexlife2_app, power_app, count, dbg_pin], priority = 3)]
     fn refresh_led_strip(mut cx: refresh_led_strip::Context) {
         // let mut rainbow = brightness(cx.resources.rainbow, 64);
         cx.resources.dbg_pin.set_low().ok();
 
-        cx.resources.app.tick(cx.resources.led_strip_data);
+        if *cx.resources.count < 100 {
+            cx.resources.drawing_app.tick(cx.resources.led_strip_data);
+        } else {
+            cx.resources.hexlife2_app.tick(cx.resources.led_strip_data);
+        }
 
         cx.resources.dbg_pin.set_high().ok();
 

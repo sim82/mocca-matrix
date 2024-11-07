@@ -4,8 +4,8 @@ use smart_leds::brightness;
 use crate::{bitzet::Bitzet, math::Vec2, prelude::*};
 
 type BitzetN = Bitzet<128>;
-const LERP_TIME: i32 = 60 * 5;
-const PAUSE_TIME: i32 = 60 * 5;
+const LERP_TIME: i32 = 60 * 1;
+const PAUSE_TIME: i32 = 60 * 2;
 
 pub struct Hexlife {
     black: BitzetN,
@@ -18,6 +18,89 @@ pub struct Hexlife {
     last: [RGB8; NUM_LEDS],
     next: [RGB8; NUM_LEDS],
     f: i32,
+}
+
+pub fn new() -> Hexlife {
+    let mut black = BitzetN::new();
+    for (i, line) in input().iter().enumerate() {
+        let mut c = line.chars();
+        let mut x = 0i32;
+        let mut y = 0i32;
+
+        // data[i % NUM_LEDS] = RGB8::new(0, 255, 0);
+        // let mut prev = None;
+        fn reset_prev(prev: Option<(i16, RGB8)>, data: &mut [RGB8]) {
+            if let Some((led, color)) = prev {
+                data[led as usize] = color;
+            }
+        }
+        loop {
+            match c.next() {
+                Some('e') => x += 1,
+                Some('w') => x -= 1,
+                Some('s') => match c.next() {
+                    Some('e') => {
+                        x += (y.abs() % 2);
+                        y += 1
+                    }
+                    Some('w') => {
+                        y += 1;
+                        x -= (y.abs() % 2);
+                    }
+                    _ => break,
+                },
+                Some('n') => match c.next() {
+                    Some('e') => {
+                        x += (y.abs() % 2);
+                        y -= 1
+                    }
+                    Some('w') => {
+                        y -= 1;
+                        x -= y.abs() % 2;
+                    }
+                    _ => break,
+                },
+                None => break,
+
+                _ => break,
+            }
+
+            // reset_prev(prev, &mut data);
+            // prev = get_matrix((x + 10) as usize, (y + 10) as usize, &mut data).ok();
+            // set_matrix(
+            //     (x + 10) as usize,
+            //     (y + 10) as usize,
+            //     RGB8::new(0, 255, 0),
+            //     &mut data,
+            // );
+            // ws.write(brightness(data.iter().cloned(), 32)).unwrap();
+            // delay.delay_ms(8u8);
+        }
+        // reset_prev(prev, &mut data);
+
+        if black.contains(&Vec2 { x, y }) {
+            black.remove(&Vec2 { x, y });
+        } else {
+            black.insert(Vec2 { x, y });
+        }
+        // set_matrix(
+        //     (x + 10) as usize,
+        //     (y + 10) as usize,
+        //     RGB8::new(0, 0, 255),
+        //     &mut data,
+        // );
+        // ws.write(brightness(data.iter().cloned(), 32)).unwrap();
+    }
+
+    Hexlife {
+        black,
+        i: 0,
+        keep_on: [0u32; NUM_LEDS / 32 + 1],
+        rainbow: Rainbow::step(7),
+        next: [color::BLACK; NUM_LEDS],
+        last: [color::BLACK; NUM_LEDS],
+        f: LERP_TIME,
+    }
 }
 
 fn adjacent(v: Vec2) -> [Vec2; 6] {
@@ -36,89 +119,6 @@ fn adjacent(v: Vec2) -> [Vec2; 6] {
 }
 
 impl app::App for Hexlife {
-    fn new() -> Self {
-        let mut black = BitzetN::new();
-        for (i, line) in input().iter().enumerate() {
-            let mut c = line.chars();
-            let mut x = 0i32;
-            let mut y = 0i32;
-
-            // data[i % NUM_LEDS] = RGB8::new(0, 255, 0);
-            // let mut prev = None;
-            fn reset_prev(prev: Option<(i16, RGB8)>, data: &mut [RGB8]) {
-                if let Some((led, color)) = prev {
-                    data[led as usize] = color;
-                }
-            }
-            loop {
-                match c.next() {
-                    Some('e') => x += 1,
-                    Some('w') => x -= 1,
-                    Some('s') => match c.next() {
-                        Some('e') => {
-                            x += (y.abs() % 2);
-                            y += 1
-                        }
-                        Some('w') => {
-                            y += 1;
-                            x -= (y.abs() % 2);
-                        }
-                        _ => break,
-                    },
-                    Some('n') => match c.next() {
-                        Some('e') => {
-                            x += (y.abs() % 2);
-                            y -= 1
-                        }
-                        Some('w') => {
-                            y -= 1;
-                            x -= y.abs() % 2;
-                        }
-                        _ => break,
-                    },
-                    None => break,
-
-                    _ => break,
-                }
-
-                // reset_prev(prev, &mut data);
-                // prev = get_matrix((x + 10) as usize, (y + 10) as usize, &mut data).ok();
-                // set_matrix(
-                //     (x + 10) as usize,
-                //     (y + 10) as usize,
-                //     RGB8::new(0, 255, 0),
-                //     &mut data,
-                // );
-                // ws.write(brightness(data.iter().cloned(), 32)).unwrap();
-                // delay.delay_ms(8u8);
-            }
-            // reset_prev(prev, &mut data);
-
-            if black.contains(&Vec2 { x, y }) {
-                black.remove(&Vec2 { x, y });
-            } else {
-                black.insert(Vec2 { x, y });
-            }
-            // set_matrix(
-            //     (x + 10) as usize,
-            //     (y + 10) as usize,
-            //     RGB8::new(0, 0, 255),
-            //     &mut data,
-            // );
-            // ws.write(brightness(data.iter().cloned(), 32)).unwrap();
-        }
-
-        Hexlife {
-            black,
-            i: 0,
-            keep_on: [0u32; NUM_LEDS / 32 + 1],
-            rainbow: Rainbow::step(7),
-            next: [color::BLACK; NUM_LEDS],
-            last: [color::BLACK; NUM_LEDS],
-            f: LERP_TIME,
-        }
-    }
-
     fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS]) {
         // let mut rainbow = Rainbow::step(7);
 

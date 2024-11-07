@@ -3,6 +3,7 @@
 #![feature(slice_fill)]
 
 use embedded_graphics::{fonts, pixelcolor, prelude::*, primitives, style};
+
 pub use smart_leds::RGB8;
 use ssd1306::{displaysize::DisplaySize, mode::GraphicsMode, prelude::WriteOnlyDataCommand};
 pub use stm32l4xx_hal as hal;

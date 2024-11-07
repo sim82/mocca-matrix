@@ -41,7 +41,7 @@ const REFRESH_LED_STRIP_PERIOD: u32 = 64_000_000 / 60;
 pub struct Sai {
     lrclk: PA9<Alternate<hal::gpio::AF13, Output<PushPull>>>,
     bclk_out: PA8<Alternate<hal::gpio::AF13, Output<PushPull>>>,
-    data_out: PA10<Alternate<hal::gpio::AF13, Output<PushPull>>>,
+    data_in: PA10<Alternate<hal::gpio::AF13, Input<Floating>>>,
 }
 
 #[rtic::app(device = hal::stm32, peripherals = true, monotonic = rtic::cyccnt::CYCCNT)]
@@ -73,10 +73,10 @@ const APP: () = {
         cx.device.RCC.pllsai1cfgr.write(|w| unsafe {
             w.pllsai1pen()
                 .set_bit()
-                // .pllsai1p()
-                // .set_bit()
+                //  .pllsai1p()
+                //  .bits(2)
                 .pllsai1n()
-                .bits(40)
+                .bits(8)
         });
         cx.device.RCC.cr.write(|w| w.pllsai1on().set_bit());
         cx.device
@@ -175,17 +175,17 @@ const APP: () = {
         // bclk_out.set_low().ok();
         let bclk_out = bclk_out.into_af13(&mut gpioa.moder, &mut gpioa.afrh);
 
-        // let mut data_in = gpioa
-        //     .pa10
-        //     .into_floating_input(&mut gpioa.moder, &mut gpioa.pupdr);
-        // let data_in = data_in.into_af13(&mut gpioa.moder, &mut gpioa.afrh);
-
-        dbg_pin.set_high().ok();
-        dbg_pin.set_low().ok();
-        let mut data_out = gpioa
+        let mut data_in = gpioa
             .pa10
-            .into_push_pull_output(&mut gpioa.moder, &mut gpioa.otyper);
-        let data_out = data_out.into_af13(&mut gpioa.moder, &mut gpioa.afrh);
+            .into_floating_input(&mut gpioa.moder, &mut gpioa.pupdr);
+        let data_in = data_in.into_af13(&mut gpioa.moder, &mut gpioa.afrh);
+
+        // dbg_pin.set_high().ok();
+        // dbg_pin.set_low().ok();
+        // let mut data_out = gpioa
+        //     .pa10
+        //     .into_push_pull_output(&mut gpioa.moder, &mut gpioa.otyper);
+        // let data_out = data_out.into_af13(&mut gpioa.moder, &mut gpioa.afrh);
         let mut mclk = gpioa
             .pa3
             .into_push_pull_output(&mut gpioa.moder, &mut gpioa.otyper);
@@ -197,9 +197,9 @@ const APP: () = {
                 .fsdef()
                 .set_bit() // FS is start of frame and channel indication
                 .fsall()
-                .bits(15) // FS high for half frame
+                .bits(31) // FS high for half frame
                 .frl()
-                .bits(31) // frame is 32bits
+                .bits(63) // frame is 32bits
         });
 
         // setup slotr
@@ -209,20 +209,16 @@ const APP: () = {
                 .nbslot()
                 .bits(1) // two slots
                 .slotsz()
-                .bit16() // 16bit per slot
+                .bit32() // 32bit per slot
         });
         dbg_pin.set_high().ok();
         dbg_pin.set_low().ok();
 
-        cx.device
-            .SAI1
-            .cha
-            .dr
-            .write(|w| unsafe { w.data().bits(0b1010101010101011) });
-        while cx.device.SAI1.cha.sr.read().flvl().is_empty() {
-            dbg_pin.set_high().ok();
-            dbg_pin.set_low().ok();
-        }
+        // cx.device
+        //     .SAI1
+        //     .cha
+        //     .dr
+        //     .write(|w| unsafe { w.data().bits(0b1010101010101011) });
 
         // setup CR and enable
         cx.device.SAI1.cha.cr1.write(|w| unsafe {
@@ -233,16 +229,21 @@ const APP: () = {
                 .ckstr()
                 .rising_edge()
                 .mode()
-                .master_tx() // master rx
+                .master_rx() // master rx
                 .prtcfg()
                 .free()
                 .mckdiv()
-                .bits(15)
+                .bits(4)
                 .saien()
                 .enabled()
         });
         dbg_pin.set_high().ok();
         dbg_pin.set_low().ok();
+
+        while !cx.device.SAI1.cha.sr.read().flvl().is_full() {
+            dbg_pin.set_high().ok();
+            dbg_pin.set_low().ok();
+        }
         // Initialization of late resources
         init::LateResources {
             timer,
@@ -251,7 +252,7 @@ const APP: () = {
             sai: Sai {
                 lrclk,
                 bclk_out,
-                data_out,
+                data_in,
             },
         }
     }
