@@ -13,22 +13,14 @@ pub mod ws2812;
 
 pub mod prelude {
     pub use super::{
-        app,
-        canvas,
-        color,
-        color::Rainbow,
-        color::HV8,
-        matrix::adjacent,
-        matrix::get_matrix,
-        matrix::led_addr,
-        // app, canvas::Canvas, color, color::Rainbow, effects, get_matrix, hal, power_zones,
-        // set_matrix, set_matrix_oddr, Console,
-        matrix::set_matrix,
-        matrix::set_matrix_oddr,
-        matrix::Error,
-        matrix::MATRIX_HEIGHT,
-        matrix::MATRIX_WIDTH,
-        matrix::NUM_LEDS,
+        app::{self, App},
+        canvas::{self, Canvas},
+        color::{self, Rainbow, HV8},
+        math::Vec2,
+        matrix::{
+            adjacent, get_matrix, led_addr, set_matrix, set_matrix_oddr, Error, MATRIX_HEIGHT,
+            MATRIX_WIDTH, NUM_LEDS,
+        },
         RGB8,
     };
 }

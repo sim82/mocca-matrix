@@ -42,7 +42,7 @@ use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::PIO0;
 use embassy_rp::pio::{InterruptHandler, Pio};
 // use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
-use embassy_time::{Duration, Ticker, Timer};
+use embassy_time::{Duration, Instant, Ticker, Timer};
 use mocca_matrix_embassy::power_zones::{DynamicLimit, NUM_ZONES};
 use mocca_matrix_embassy::ws2812::{PioWs2812, PioWs2812Program};
 use mocca_matrix_embassy::{power_zones, prelude::*};
@@ -88,7 +88,7 @@ impl LedStrip {
             limit[i] = self.dynamic_limit[i].get_limit();
         }
 
-        info!("power: {:?} {:?}", led_strip_power, limit);
+        // info!("power: {:?} {:?}", led_strip_power, limit);
         power_zones::limit_current(&mut self.data, &limit);
         self.count = self.count.wrapping_add(1);
         self.ws2812.write(&self.data).await;
@@ -102,15 +102,19 @@ async fn rgb_task(ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
     let mut splash = app::drawing::new();
     let mut app = app::hexlife2::new();
     // let mut app = app::power::new();
+    let mut app = app::cellular::new();
     loop {
-        // led_strip.data.fill([255, 255, 255].into());
-        if led_strip.count < 100 {
-            splash.tick(&mut led_strip.data);
-        } else {
-            app.tick(&mut led_strip.data);
-        }
+        let start = Instant::now();
+        app.tick(&mut led_strip.data);
+        let dt = start.elapsed();
+
+        info!("calc: {}", dt.as_micros());
+        let start = Instant::now();
         led_strip.write().await;
+        info!("write: {}", start.elapsed().as_micros());
+        let start = Instant::now();
         ticker.next().await;
+        info!("wait: {}", start.elapsed().as_micros());
     }
 }
 #[embassy_executor::main]

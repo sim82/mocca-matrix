@@ -8,6 +8,7 @@ use crate::prelude::*;
 pub trait Canvas {
     fn clear(&mut self);
     fn line(&mut self, a: hex::Cube, b: hex::Cube, color: RGB8);
+    fn set_oddr(&mut self, v: Vec2, color: RGB8);
     // fn apply(&mut self);
     // fn data(&mut self) -> &mut [RGB8; NUM_LEDS];
 }
@@ -21,5 +22,8 @@ impl Canvas for [RGB8; NUM_LEDS] {
 
     fn clear(&mut self) {
         self.fill(color::BLACK);
+    }
+    fn set_oddr(&mut self, v: Vec2, color: RGB8) {
+        set_matrix_oddr(v, color, self)
     }
 }

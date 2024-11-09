@@ -1,9 +1,9 @@
 use canvas::Canvas;
 use smart_leds::brightness;
 
+use crate::hex::prelude::*;
 use crate::math::Vec2;
 use crate::prelude::*;
-use crate::hex::prelude::*;
 use micromath::F32Ext;
 
 pub struct Drawing {

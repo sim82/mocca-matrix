@@ -1,3 +1,5 @@
+use core::ops::Range;
+
 use smart_leds::RGB8;
 
 use crate::{
@@ -6,7 +8,7 @@ use crate::{
 };
 
 pub const NUM_LEDS: usize = 291;
-const MATRIX_MAP: [i16; 21 * 19] = [
+pub const MATRIX_MAP: [i16; 21 * 19] = [
     291, 291, 291, 291, 291, 291, 291, 291, 0, 1, 2, 3, 4, 5, 6, 7, 291, 291, 291, 291, 291, 291,
     291, 291, 291, 291, 16, 15, 14, 13, 12, 11, 10, 9, 8, 291, 291, 291, 291, 291, 291, 291, 291,
     291, 291, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 291, 291, 291, 291, 291, 291, 291, 291, 37,
@@ -30,6 +32,9 @@ const MATRIX_MAP: [i16; 21 * 19] = [
 ];
 pub const MATRIX_WIDTH: usize = 19;
 pub const MATRIX_HEIGHT: usize = 21;
+
+pub const MATRIX_X: Range<usize> = 0..MATRIX_WIDTH;
+pub const MATRIX_Y: Range<usize> = 0..MATRIX_HEIGHT;
 
 #[derive(Debug)]
 pub enum Error {

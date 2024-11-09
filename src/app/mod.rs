@@ -1,9 +1,10 @@
-pub mod drawing;
-// pub mod hexlife;
-pub mod hexlife2;
-pub mod power;
 use crate::prelude::*;
 
+pub mod drawing;
+// pub mod hexlife;
+pub mod cellular;
+pub mod hexlife2;
+pub mod power;
 pub trait App {
     // fn new() -> Self;
     fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS]);
