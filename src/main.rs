@@ -43,6 +43,7 @@ use embassy_rp::peripherals::PIO0;
 use embassy_rp::pio::{InterruptHandler, Pio};
 // use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
 use embassy_time::{Duration, Instant, Ticker, Timer};
+use mocca_matrix_embassy::i2s::{PioI2S, PioI2SProgram};
 use mocca_matrix_embassy::power_zones::{DynamicLimit, NUM_ZONES};
 use mocca_matrix_embassy::ws2812::{PioWs2812, PioWs2812Program};
 use mocca_matrix_embassy::{power_zones, prelude::*};
@@ -117,6 +118,15 @@ async fn rgb_task(ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
         info!("wait: {}", start.elapsed().as_micros());
     }
 }
+#[embassy_executor::task]
+async fn i2s_task(i2s: PioI2S<'static, PIO0, 0, NUM_LEDS>) {
+    let mut ticker = Ticker::every(Duration::from_millis(16));
+    loop {
+        //
+        ticker.next().await;
+    }
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     info!("Start");
@@ -131,10 +141,13 @@ async fn main(spawner: Spawner) {
     // Common neopixel pins:
     // Thing plus: 8
     // Adafruit Feather: 16;  Adafruit Feather+RFM95: 4
-    let program = PioWs2812Program::new(&mut common);
-    let ws2812 = PioWs2812::new(&mut common, sm0, p.DMA_CH0, p.PIN_16, &program);
+    // let program = PioWs2812Program::new(&mut common);
+    // let ws2812 = PioWs2812::new(&mut common, sm0, p.DMA_CH0, p.PIN_16, &program);
+    let program = PioI2SProgram::new2(&mut common);
+    let i2s = PioI2S::new(&mut common, sm0, p.DMA_CH0, p.PIN_14, p.PIN_15, &program);
 
     // Loop forever making RGB values and pushing them out to the WS2812.
     unwrap!(spawner.spawn(blink_task(led)));
-    unwrap!(spawner.spawn(rgb_task(ws2812)));
+    unwrap!(spawner.spawn(i2s_task(i2s)));
+    // unwrap!(spawner.spawn(rgb_task(ws2812)));
 }

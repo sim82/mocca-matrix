@@ -6,6 +6,7 @@ pub mod canvas;
 pub mod color;
 pub mod effects;
 pub mod hex;
+pub mod i2s;
 pub mod math;
 pub mod matrix;
 pub mod power_zones;
