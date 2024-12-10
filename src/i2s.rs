@@ -22,21 +22,21 @@ impl<'a, PIO: Instance> PioI2SProgram<'a, PIO> {
     pub fn new2(common: &mut Common<'a, PIO>) -> Self {
         let prg = pio_proc::pio_asm!(
             r#"
-                    .side_set 1
-                    set pindirs, 1               side 0
+                    .side_set 2 opt
+                    set pindirs, 0b11               
                     .wrap_target
-                        set x, 32            side 1
-                        set pins 0b10            side 1
-                    bitloop:
-                        nop                   side 0
-                        nop                   side 1
-                        jmp x-- bitloop        side 0
-                        set x, 32            side 1
-                        set pins 0            side 1
-                    bitloop2:
-                        nop                   side 0
-                        nop                   side 1
-                        jmp x-- bitloop2        side 0
+                    frame1:
+                        set x, 30      side 0b00
+                        nop            side 0b01
+                    data1:
+                        in pins, 1     side 0b00
+                        jmp x-- data1  side 0b01
+                    frame2:
+                        set x, 30      side 0b10
+                        nop            side 0b11
+                    data2:
+                        nop            side 0b10
+                        jmp x-- data2  side 0b11
                     .wrap
                 "#
         );
@@ -60,6 +60,7 @@ impl<'d, P: Instance, const S: usize, const N: usize> PioI2S<'d, P, S, N> {
         dma: impl Peripheral<P = impl Channel> + 'd,
         pin: impl PioPin,
         pinwc: impl PioPin,
+        pindata: impl PioPin,
         program: &PioI2SProgram<'d, P>,
     ) -> Self {
         into_ref!(dma);
@@ -70,25 +71,32 @@ impl<'d, P: Instance, const S: usize, const N: usize> PioI2S<'d, P, S, N> {
         // Pin config
         let out_pin = pio.make_pio_pin(pin);
         let out_pinwc = pio.make_pio_pin(pinwc);
-        cfg.set_out_pins(&[&out_pin, &out_pinwc]);
+        let mut in_pindata = pio.make_pio_pin(pindata);
+        in_pindata.set_input_sync_bypass(true);
+        // cfg.set_out_pins(&[&out_pin, &out_pinwc]);
         cfg.set_set_pins(&[&out_pin, &out_pinwc]);
+        cfg.set_in_pins(&[&in_pindata]);
 
-        cfg.use_program(&program.prg, &[&out_pin]);
+        cfg.use_program(&program.prg, &[&out_pin, &out_pinwc]);
 
         // Clock config, measured in kHz to avoid overflows
-        let clock_freq = U24F8::from_num(clk_sys_freq() / 1000);
+        let clock_freq = U24F8::from_num(clk_sys_freq() / 2000);
         let i2s_freq = U24F8::from_num(1000);
         let bit_freq = i2s_freq * 2;
         cfg.clock_divider = clock_freq / bit_freq;
 
         // FIFO config
-        cfg.fifo_join = FifoJoin::TxOnly;
-        cfg.shift_out = ShiftConfig {
+        cfg.fifo_join = FifoJoin::RxOnly;
+        // cfg.shift_out = ShiftConfig {
+        //     auto_fill: true,
+        //     threshold: 24,
+        //     direction: ShiftDirection::Left,
+        // };
+        cfg.shift_in = ShiftConfig {
             auto_fill: true,
-            threshold: 24,
+            threshold: 31,
             direction: ShiftDirection::Left,
         };
-
         sm.set_config(&cfg);
         sm.set_enable(true);
 
@@ -97,21 +105,17 @@ impl<'d, P: Instance, const S: usize, const N: usize> PioI2S<'d, P, S, N> {
             sm,
         }
     }
-
     /// Write a buffer of [smart_leds::RGB8] to the ws2812 string
-    pub async fn write(&mut self, colors: &[RGB8; N]) {
+    pub async fn read(&mut self, samples: &mut [u32; 32]) {
         // Precompute the word bytes from the colors
-        let mut words = [0u32; N];
-        for i in 0..N {
-            let word = (u32::from(colors[i].g) << 24)
-                | (u32::from(colors[i].r) << 16)
-                | (u32::from(colors[i].b) << 8);
-            words[i] = word;
-        }
-
         // DMA transfer
-        self.sm.tx().dma_push(self.dma.reborrow(), &words).await;
+        // for x in samples.iter_mut() {
+        //     self.sm.rx().wait_pull().await;
+        //     *x = self.sm.rx().pull();
+        // }
 
-        Timer::after_micros(55).await;
+        self.sm.rx().dma_pull(self.dma.reborrow(), samples).await;
+
+        // Timer::after_micros(55).await;
     }
 }

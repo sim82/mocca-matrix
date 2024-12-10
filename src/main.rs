@@ -39,14 +39,16 @@ use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::PIO0;
+use embassy_rp::peripherals::{PIO0, UART1};
 use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_rp::uart::{Async, Config, UartTx};
 // use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
 use embassy_time::{Duration, Instant, Ticker, Timer};
 use mocca_matrix_embassy::i2s::{PioI2S, PioI2SProgram};
 use mocca_matrix_embassy::power_zones::{DynamicLimit, NUM_ZONES};
 use mocca_matrix_embassy::ws2812::{PioWs2812, PioWs2812Program};
 use mocca_matrix_embassy::{power_zones, prelude::*};
+use num_traits::AsPrimitive;
 use smart_leds::RGB8;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -119,10 +121,58 @@ async fn rgb_task(ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
     }
 }
 #[embassy_executor::task]
-async fn i2s_task(i2s: PioI2S<'static, PIO0, 0, NUM_LEDS>) {
+async fn i2s_task(
+    mut i2s: PioI2S<'static, PIO0, 0, NUM_LEDS>,
+    mut uart_tx: UartTx<'static, UART1, Async>,
+) {
     let mut ticker = Ticker::every(Duration::from_millis(16));
+    let mut words = [0u32; 32];
+    let mut samples = [0i32; 32];
+    let mut null = 0i32;
+    let N = 10i32;
+    let mut all_samples = [0i16; 32 * 1024];
     loop {
         //
+
+        let mut minall = i16::MAX;
+        let mut maxall = i16::MIN;
+        let mut sum = 0f32;
+        for i in 0..1024 {
+            i2s.read(&mut words).await;
+
+            for (o, i) in samples.iter_mut().zip(words) {
+                *o = ((i << 1) as i32) >> 14;
+            }
+            let avg = samples.iter().sum::<i32>() / samples.len() as i32;
+            null -= null / N;
+            null += avg / N;
+            let samples_16 = &mut all_samples[i * 32..(i + 1) * 32];
+            for (o, i) in samples_16.iter_mut().zip(samples) {
+                *o = ((i - null) >> 2) as i16;
+            }
+
+            let min = samples_16.iter().min().unwrap();
+            let max = samples_16.iter().max().unwrap();
+
+            minall = minall.min(*min);
+            maxall = maxall.max(*max);
+            // sum += words
+            //     .iter()
+            //     .map(|s| {
+            //         let x: i32 = ((s << 1) as i32);
+            //         x as f32
+            //     })
+            //     .sum::<f32>()
+            //     / 32f32;
+        }
+        info!("null: {} min: {} max: {}", null, minall, maxall);
+        uart_tx.write(b"bla\n\r").await;
+        // write!(uart_tx, "bla");
+        // for (i, c) in all_samples.chunks(32).enumerate() {
+        //     info!("{}: {:?}", i, c);
+        // }
+        // info!("start: {:?}", all_samples);
+
         ticker.next().await;
     }
 }
@@ -144,10 +194,19 @@ async fn main(spawner: Spawner) {
     // let program = PioWs2812Program::new(&mut common);
     // let ws2812 = PioWs2812::new(&mut common, sm0, p.DMA_CH0, p.PIN_16, &program);
     let program = PioI2SProgram::new2(&mut common);
-    let i2s = PioI2S::new(&mut common, sm0, p.DMA_CH0, p.PIN_14, p.PIN_15, &program);
+    let i2s = PioI2S::new(
+        &mut common,
+        sm0,
+        p.DMA_CH0,
+        p.PIN_14,
+        p.PIN_15,
+        p.PIN_16,
+        &program,
+    );
 
+    let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH1, Config::default());
     // Loop forever making RGB values and pushing them out to the WS2812.
     unwrap!(spawner.spawn(blink_task(led)));
-    unwrap!(spawner.spawn(i2s_task(i2s)));
+    unwrap!(spawner.spawn(i2s_task(i2s, uart_tx)));
     // unwrap!(spawner.spawn(rgb_task(ws2812)));
 }
