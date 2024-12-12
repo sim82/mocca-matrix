@@ -47,12 +47,12 @@ impl<'a, PIO: Instance> PioI2SProgram<'a, PIO> {
 
 /// Pio backed ws2812 driver
 /// Const N is the number of ws2812 leds attached to this pin
-pub struct PioI2S<'d, P: Instance, const S: usize, const N: usize> {
+pub struct PioI2S<'d, P: Instance, const S: usize> {
     dma: PeripheralRef<'d, AnyChannel>,
     sm: StateMachine<'d, P, S>,
 }
 
-impl<'d, P: Instance, const S: usize, const N: usize> PioI2S<'d, P, S, N> {
+impl<'d, P: Instance, const S: usize> PioI2S<'d, P, S> {
     /// Configure a pio state machine to use the loaded ws2812 program.
     pub fn new(
         pio: &mut Common<'d, P>,
@@ -81,7 +81,7 @@ impl<'d, P: Instance, const S: usize, const N: usize> PioI2S<'d, P, S, N> {
 
         // Clock config, measured in kHz to avoid overflows
         let clock_freq = U24F8::from_num(clk_sys_freq() / 2000);
-        let i2s_freq = U24F8::from_num(1000);
+        let i2s_freq = U24F8::from_num(1411);
         let bit_freq = i2s_freq * 2;
         cfg.clock_divider = clock_freq / bit_freq;
 

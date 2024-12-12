@@ -39,7 +39,7 @@ use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{PIO0, UART1};
+use embassy_rp::peripherals::{PIO0, PIO1, UART1};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::uart::{Async, Config, UartTx};
 // use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
@@ -49,11 +49,15 @@ use mocca_matrix_embassy::power_zones::{DynamicLimit, NUM_ZONES};
 use mocca_matrix_embassy::ws2812::{PioWs2812, PioWs2812Program};
 use mocca_matrix_embassy::{power_zones, prelude::*};
 use num_traits::AsPrimitive;
-use smart_leds::RGB8;
+use smart_leds::{RGB, RGB8};
 use {defmt_rtt as _, panic_probe as _};
 
-bind_interrupts!(struct Irqs {
+bind_interrupts!(struct Irqs0 {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
+});
+
+bind_interrupts!(struct Irqs1 {
+    PIO1_IRQ_0 => InterruptHandler<PIO1>;
 });
 
 #[embassy_executor::task]
@@ -68,11 +72,11 @@ async fn blink_task(mut led: Output<'static>) {
 pub struct LedStrip {
     pub data: [RGB8; NUM_LEDS],
     dynamic_limit: [DynamicLimit; NUM_ZONES],
-    ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>,
+    ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>,
     count: u32,
 }
 impl LedStrip {
-    pub fn new(ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) -> Self {
+    pub fn new(ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>) -> Self {
         Self {
             data: [RGB8::default(); NUM_LEDS],
             dynamic_limit: Default::default(),
@@ -99,31 +103,44 @@ impl LedStrip {
 }
 // const NUM_LEDS: usize = 8;
 #[embassy_executor::task]
-async fn rgb_task(ws2812: PioWs2812<'static, PIO0, 0, NUM_LEDS>) {
-    let mut led_strip = LedStrip::new(ws2812);
+async fn rgb_task(mut ws2812: PioWs2812<'static, PIO1, 1, 8>) {
+    let mut data = [RGB::default(); 8];
+    // let mut led_strip = LedStrip::new(ws2812);
     let mut ticker = Ticker::every(Duration::from_millis(16));
-    let mut splash = app::drawing::new();
-    let mut app = app::hexlife2::new();
-    // let mut app = app::power::new();
-    let mut app = app::cellular::new();
+    let mut i = 0u8;
     loop {
-        let start = Instant::now();
-        app.tick(&mut led_strip.data);
-        let dt = start.elapsed();
-
-        info!("calc: {}", dt.as_micros());
-        let start = Instant::now();
-        led_strip.write().await;
-        info!("write: {}", start.elapsed().as_micros());
-        let start = Instant::now();
+        data.fill(RGB { r: i, g: 0, b: 0 });
+        i = i.wrapping_add(1);
+        ws2812.write(&data).await;
         ticker.next().await;
-        info!("wait: {}", start.elapsed().as_micros());
     }
 }
+// #[embassy_executor::task]
+// async fn rgb_task(ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>) {
+//     let mut led_strip = LedStrip::new(ws2812);
+//     let mut ticker = Ticker::every(Duration::from_millis(16));
+//     let mut splash = app::drawing::new();
+//     let mut app = app::hexlife2::new();
+//     // let mut app = app::power::new();
+//     let mut app = app::cellular::new();
+//     loop {
+//         let start = Instant::now();
+//         app.tick(&mut led_strip.data);
+//         let dt = start.elapsed();
+
+//         info!("calc: {}", dt.as_micros());
+//         let start = Instant::now();
+//         led_strip.write().await;
+//         info!("write: {}", start.elapsed().as_micros());
+//         let start = Instant::now();
+//         ticker.next().await;
+//         info!("wait: {}", start.elapsed().as_micros());
+//     }
+// }
 #[embassy_executor::task]
 async fn i2s_task(
-    mut i2s: PioI2S<'static, PIO0, 0, NUM_LEDS>,
-    mut uart_tx: UartTx<'static, UART1, Async>,
+    mut i2s: PioI2S<'static, PIO0, 0>,
+    // mut uart_tx: UartTx<'static, UART1, Async>
 ) {
     let mut ticker = Ticker::every(Duration::from_millis(16));
     let mut words = [0u32; 32];
@@ -165,8 +182,21 @@ async fn i2s_task(
             //     .sum::<f32>()
             //     / 32f32;
         }
+        // if false {
+        //     let mut bytes = [0u8; 2048];
+        //     // let mut byte_ptr = &mut bytes[..];
+        //     for c in all_samples.chunks(1024) {
+        //         for (i, s) in c.iter().enumerate() {
+        //             bytes[i * 2] = ((*s as u16) & 0xff) as u8;
+        //             bytes[i * 2 + 1] = (((*s as u16) >> 8) & 0xff) as u8;
+        //             // byte_ptr = &mut byte_ptr[2..];
+        //         }
+        //         let _ = uart_tx.write(&bytes).await;
+        //     }
+        //     uart_tx.write(b"\r\n").await;
+        // }
         info!("null: {} min: {} max: {}", null, minall, maxall);
-        uart_tx.write(b"bla\n\r").await;
+        // uart_tx.write(b"bla\n\r").await;
         // write!(uart_tx, "bla");
         // for (i, c) in all_samples.chunks(32).enumerate() {
         //     info!("{}: {:?}", i, c);
@@ -184,29 +214,32 @@ async fn main(spawner: Spawner) {
 
     let led = Output::new(p.PIN_25, Level::Low);
 
-    let Pio {
-        mut common, sm0, ..
-    } = Pio::new(p.PIO0, Irqs);
+    let i2s = {
+        let Pio {
+            mut common, sm0, ..
+        } = Pio::new(p.PIO0, Irqs0);
+        let program = PioI2SProgram::new2(&mut common);
+        PioI2S::new(
+            &mut common,
+            sm0,
+            p.DMA_CH0,
+            p.PIN_14,
+            p.PIN_15,
+            p.PIN_16,
+            &program,
+        )
+    };
 
-    // Common neopixel pins:
-    // Thing plus: 8
-    // Adafruit Feather: 16;  Adafruit Feather+RFM95: 4
-    // let program = PioWs2812Program::new(&mut common);
-    // let ws2812 = PioWs2812::new(&mut common, sm0, p.DMA_CH0, p.PIN_16, &program);
-    let program = PioI2SProgram::new2(&mut common);
-    let i2s = PioI2S::new(
-        &mut common,
-        sm0,
-        p.DMA_CH0,
-        p.PIN_14,
-        p.PIN_15,
-        p.PIN_16,
-        &program,
-    );
-
-    let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH1, Config::default());
+    // let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH1, Config::default());
+    let ws2812 = {
+        let Pio {
+            mut common, sm1, ..
+        } = Pio::new(p.PIO1, Irqs1);
+        let program = PioWs2812Program::new(&mut common);
+        PioWs2812::new(&mut common, sm1, p.DMA_CH1, p.PIN_17, &program)
+    };
     // Loop forever making RGB values and pushing them out to the WS2812.
     unwrap!(spawner.spawn(blink_task(led)));
-    unwrap!(spawner.spawn(i2s_task(i2s, uart_tx)));
-    // unwrap!(spawner.spawn(rgb_task(ws2812)));
+    unwrap!(spawner.spawn(i2s_task(i2s /*, uart_tx*/)));
+    unwrap!(spawner.spawn(rgb_task(ws2812)));
 }
