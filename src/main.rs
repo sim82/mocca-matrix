@@ -55,6 +55,7 @@ use smart_leds::{RGB, RGB8};
 use {defmt_rtt as _, panic_probe as _};
 
 static AUDIO_LEVEL: Signal<ThreadModeRawMutex, i16> = Signal::new();
+static SAMPLES: Signal<ThreadModeRawMutex, [i16; 32]> = Signal::new();
 
 bind_interrupts!(struct Irqs0 {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -115,8 +116,10 @@ async fn rgb_task(mut ws2812: PioWs2812<'static, PIO1, 1, 8>) {
     // let mut color = RGB::default();
     let mut smooth = 0i16;
     loop {
-        if let Some(level) = AUDIO_LEVEL.try_take() {
-            smooth = smooth.max(level.abs());
+        if let Some(samples) = SAMPLES.try_take() {
+            let min = samples.iter().min().unwrap();
+            let max = samples.iter().max().unwrap();
+            smooth = smooth.max(min.abs().max(max.abs()));
         }
         i = i.wrapping_add(1);
         // let f = (smooth / (i16::MAX / 32)).min(7);
@@ -132,6 +135,29 @@ async fn rgb_task(mut ws2812: PioWs2812<'static, PIO1, 1, 8>) {
         ws2812.write(&data).await;
         smooth = smooth.saturating_sub((smooth / 8).max(1));
         ticker.next().await;
+    }
+}
+#[embassy_executor::task]
+async fn uart_task(mut uart_tx: UartTx<'static, UART1, Async>) {
+    let mut samples = [0i16; 32 * 1024];
+    loop {
+        info!("receive");
+        for c in samples.chunks_mut(32) {
+            c.copy_from_slice(&SAMPLES.wait().await)
+        }
+        info!("send");
+        let mut bytes = [0u8; 2048];
+        for c in samples.chunks(1024) {
+            // for (b, s) in bytes.iter_mut().zip(c) {
+            //     *b = ((*s as u16) >> 8) as u8;
+            // }
+            for (i, s) in c.iter().enumerate() {
+                bytes[i * 2] = ((*s as u16) & 0xff) as u8;
+                bytes[i * 2 + 1] = (((*s as u16) >> 8) & 0xff) as u8;
+                // byte_ptr = &mut byte_ptr[2..];
+            }
+            let _ = uart_tx.write(&bytes).await;
+        }
     }
 }
 // #[embassy_executor::task]
@@ -156,78 +182,47 @@ async fn rgb_task(mut ws2812: PioWs2812<'static, PIO1, 1, 8>) {
 //         info!("wait: {}", start.elapsed().as_micros());
 //     }
 // }
+
 // #[embassy_executor::task]
-// async fn i2s_task(
+// async fn i2s_sample_task(
 //     mut i2s: PioI2S<'static, PIO0, 0>,
 //     // mut uart_tx: UartTx<'static, UART1, Async>
 // ) {
-//     // let mut ticker = Ticker::every(Duration::from_millis(16));
 //     let mut words = [0u32; 32];
 //     let mut samples = [0i32; 32];
+//     let mut samples_16 = [0i16; 32];
 //     let mut null = 0i32;
-//     let N = 10i32;
-//     let mut all_samples = [0i16; 32 * 1024];
+//     const N: i32 = 10i32;
 //     loop {
-//         //
+//         // for _ in 0..20 {
+//         i2s.read(&mut words).await;
 
-//         let mut minall = i16::MAX;
-//         let mut maxall = i16::MIN;
-//         let mut sum = 0f32;
-//         for i in 0..1024 {
-//             i2s.read(&mut words).await;
-
-//             for (o, i) in samples.iter_mut().zip(words) {
-//                 *o = ((i << 1) as i32) >> 14;
-//             }
-//             let avg = samples.iter().sum::<i32>() / samples.len() as i32;
-//             null -= null / N;
-//             null += avg / N;
-//             let samples_16 = &mut all_samples[i * 32..(i + 1) * 32];
-//             for (o, i) in samples_16.iter_mut().zip(samples) {
-//                 *o = ((i - null) >> 2) as i16;
-//             }
-
-//             let min = samples_16.iter().min().unwrap();
-//             let max = samples_16.iter().max().unwrap();
-
-//             minall = minall.min(*min);
-//             maxall = maxall.max(*max);
-//             AUDIO_LEVEL.signal(min.abs().max(max.abs()));
-//             // sum += words
-//             //     .iter()
-//             //     .map(|s| {
-//             //         let x: i32 = ((s << 1) as i32);
-//             //         x as f32
-//             //     })
-//             //     .sum::<f32>()
-//             //     / 32f32;
+//         for (o, i) in samples.iter_mut().zip(words) {
+//             *o = ((i << 1) as i32) >> 14;
 //         }
-//         // if false {
-//         //     let mut bytes = [0u8; 2048];
-//         //     // let mut byte_ptr = &mut bytes[..];
-//         //     for c in all_samples.chunks(1024) {
-//         //         for (i, s) in c.iter().enumerate() {
-//         //             bytes[i * 2] = ((*s as u16) & 0xff) as u8;
-//         //             bytes[i * 2 + 1] = (((*s as u16) >> 8) & 0xff) as u8;
-//         //             // byte_ptr = &mut byte_ptr[2..];
-//         //         }
-//         //         let _ = uart_tx.write(&bytes).await;
-//         //     }
-//         //     uart_tx.write(b"\r\n").await;
-//         // }
-//         info!("null: {} min: {} max: {}", null, minall, maxall);
-//         // uart_tx.write(b"bla\n\r").await;
-//         // write!(uart_tx, "bla");
-//         // for (i, c) in all_samples.chunks(32).enumerate() {
-//         //     info!("{}: {:?}", i, c);
-//         // }
-//         // info!("start: {:?}", all_samples);
+//         let avg = samples.iter().sum::<i32>() / samples.len() as i32;
+//         null -= null / N;
+//         null += avg / N;
+//         // let samples_16 = &mut all_samples[i * 32..(i + 1) * 32];
+//         for (o, i) in samples_16.iter_mut().zip(samples) {
+//             *o = ((i - null) >> 2) as i16;
+//             // *o = (i >> 2) as i16;
+//         }
 
-//         // ticker.next().await;
+//         // let min = samples_16.iter().min().unwrap();
+//         // let max = samples_16.iter().max().unwrap();
+
+//         // minall = minall.min(*min);
+//         // maxall = maxall.max(*max);
+//         // AUDIO_LEVEL.signal(minall.abs().max(maxall.abs()));
+//         SAMPLES.signal(samples_16);
+//         info!("avg: {}", null);
+//         // }
 //     }
 // }
+
 #[embassy_executor::task]
-async fn i2s_task(
+async fn i2s_sample_task(
     mut i2s: PioI2S<'static, PIO0, 0>,
     // mut uart_tx: UartTx<'static, UART1, Async>
 ) {
@@ -235,40 +230,41 @@ async fn i2s_task(
     let mut samples = [0i32; 32];
     let mut samples_16 = [0i16; 32];
     let mut null = 0i32;
-    let N = 10i32;
+    const N: i32 = 100i32;
+    let mut filter = 0i32;
+    let mut output = 0i32;
     loop {
-        //
+        // for _ in 0..20 {
+        i2s.read(&mut words).await;
 
-        let mut minall = i16::MAX;
-        let mut maxall = i16::MIN;
-        let mut sum = 0f32;
-        for i in 0..20 {
-            i2s.read(&mut words).await;
-
-            for (o, i) in samples.iter_mut().zip(words) {
-                *o = ((i << 1) as i32) >> 14;
-            }
-            let avg = samples.iter().sum::<i32>() / samples.len() as i32;
-            null -= null / N;
-            null += avg / N;
-            // let samples_16 = &mut all_samples[i * 32..(i + 1) * 32];
-            for (o, i) in samples_16.iter_mut().zip(samples) {
-                *o = ((i - null) >> 2) as i16;
-            }
-
-            let min = samples_16.iter().min().unwrap();
-            let max = samples_16.iter().max().unwrap();
-
-            minall = minall.min(*min);
-            maxall = maxall.max(*max);
+        for (o, i) in samples.iter_mut().zip(words) {
+            let new_val = ((i << 1) as i32) >> 14;
+            // null -= null / N;
+            // null += new_val / N;
+            // hyper crappy high-pass
+            null -= (null - new_val) / N;
+            *o = new_val - null;
+            *o *= 64;
         }
-        AUDIO_LEVEL.signal(minall.abs().max(maxall.abs()));
+        let avg = samples.iter().sum::<i32>() / samples.len() as i32;
+        // let samples_16 = &mut all_samples[i * 32..(i + 1) * 32];
+        for (o, i) in samples_16.iter_mut().zip(samples) {
+            // *o = ((i - null) >> 2) as i16;
+            *o = (i >> 2) as i16;
+            // *o = (i) as i16;
+        }
+
+        // let min = samples_16.iter().min().unwrap();
+        // let max = samples_16.iter().max().unwrap();
+
+        // minall = minall.min(*min);
+        // maxall = maxall.max(*max);
         // AUDIO_LEVEL.signal(minall.abs().max(maxall.abs()));
-        // info!("signal");
-        // info!("null: {} min: {} max: {}", null, minall, maxall);
+        SAMPLES.signal(samples_16);
+        // info!("avg: {}", null);
+        // }
     }
 }
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     info!("Start");
@@ -292,16 +288,21 @@ async fn main(spawner: Spawner) {
         )
     };
 
-    // let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH1, Config::default());
-    let ws2812 = {
-        let Pio {
-            mut common, sm1, ..
-        } = Pio::new(p.PIO1, Irqs1);
-        let program = PioWs2812Program::new(&mut common);
-        PioWs2812::new(&mut common, sm1, p.DMA_CH1, p.PIN_17, &program)
-    };
-    // Loop forever making RGB values and pushing them out to the WS2812.
+    unwrap!(spawner.spawn(i2s_sample_task(i2s /*, uart_tx*/)));
+    /////////////////////////////
+    // let ws2812 = {
+    //     let Pio {
+    //         mut common, sm1, ..
+    //     } = Pio::new(p.PIO1, Irqs1);
+    //     let program = PioWs2812Program::new(&mut common);
+    //     PioWs2812::new(&mut common, sm1, p.DMA_CH1, p.PIN_17, &program)
+    // };
+    // unwrap!(spawner.spawn(rgb_task(ws2812)));
+
+    /////////////////////////////
+    let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH3, Config::default());
+    unwrap!(spawner.spawn(uart_task(uart_tx)));
+
+    /////////////////////////////
     unwrap!(spawner.spawn(blink_task(led)));
-    unwrap!(spawner.spawn(i2s_task(i2s /*, uart_tx*/)));
-    unwrap!(spawner.spawn(rgb_task(ws2812)));
 }
