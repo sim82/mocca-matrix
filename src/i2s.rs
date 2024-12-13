@@ -105,15 +105,7 @@ impl<'d, P: Instance, const S: usize> PioI2S<'d, P, S> {
             sm,
         }
     }
-    /// Write a buffer of [smart_leds::RGB8] to the ws2812 string
     pub async fn read(&mut self, samples: &mut [u32; 32]) {
-        // Precompute the word bytes from the colors
-        // DMA transfer
-        // for x in samples.iter_mut() {
-        //     self.sm.rx().wait_pull().await;
-        //     *x = self.sm.rx().pull();
-        // }
-
         self.sm.rx().dma_pull(self.dma.reborrow(), samples).await;
 
         // Timer::after_micros(55).await;
