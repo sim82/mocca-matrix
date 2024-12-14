@@ -1,31 +1,115 @@
 use crate::{matrix, prelude::*};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
+const TTL_MAX: usize = 30;
+
+#[derive(Default, Copy, Clone)]
+struct Seed {
+    pos: Vec2,
+    active: bool,
+    ttl: usize,
+}
+impl Seed {
+    pub fn new(x: i32, y: i32) -> Self {
+        Seed {
+            pos: Vec2::new(x, y),
+            active: true,
+            ttl: TTL_MAX,
+        }
+    }
+}
 pub struct Fire {
     data: [f32; 21 * 19],
     count: u8,
     rng: SmallRng,
+    seeds: [Seed; 27],
 }
 pub fn new() -> Fire {
     let mut data = [0.0; MATRIX_HEIGHT * MATRIX_WIDTH];
     data[10 * 19 + 10] = 1.0;
+    let mut seeds = [Seed::default(); 27];
+    seeds[0].pos = Vec2::new(0, 11);
+    seeds[0].active = true;
+    let seeds = [
+        // Seed::new(0, 10),
+        // Seed::new(0, 11),
+        // Seed::new(1, 12),
+        // Seed::new(1, 13),
+        // Seed::new(2, 14),
+        Seed::default(),
+        Seed::default(),
+        Seed::default(),
+        Seed::default(),
+        Seed::default(),
+        Seed::new(2, 15),
+        Seed::new(3, 16),
+        Seed::new(4, 16),
+        Seed::new(5, 16),
+        Seed::new(6, 16),
+        Seed::new(6, 17),
+        Seed::new(7, 18),
+        Seed::new(7, 19),
+        Seed::new(8, 20),
+        Seed::new(9, 20),
+        Seed::new(10, 20),
+        Seed::new(11, 20),
+        Seed::new(12, 20),
+        Seed::new(13, 20),
+        Seed::new(14, 20),
+        Seed::new(15, 20),
+        // Seed::new(15, 19),
+        // Seed::new(16, 18),
+        // Seed::new(16, 17),
+        // Seed::new(17, 16),
+        // Seed::new(17, 15),
+        // Seed::new(18, 14),
+        // Seed::new(14, 19),
+        Seed::default(),
+        Seed::default(),
+        Seed::default(),
+        Seed::default(),
+        Seed::default(),
+        Seed::default(),
+    ];
     Fire {
         data,
         count: 0,
         rng: SmallRng::seed_from_u64(0),
+        seeds,
     }
 }
 
 impl App for Fire {
     fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS]) {
         // self.data[10 * 19 + 10] = 1.0;
+        // {
+        //     let spawn = Vec2::new(
+        //         self.rng.gen_range(matrix::MATRIX_X) as i32,
+        //         self.rng.gen_range(17..matrix::MATRIX_HEIGHT) as i32,
+        //     );
+        //     let spawn_temp = self.rng.gen_range(0.2..0.6);
+        //     self.set(spawn, spawn_temp);
+        // }
         {
-            let spawn = Vec2::new(
-                self.rng.gen_range(matrix::MATRIX_X) as i32,
-                self.rng.gen_range(17..matrix::MATRIX_HEIGHT) as i32,
-            );
-            let spawn_temp = self.rng.gen_range(0.2..0.6);
-            self.set(spawn, spawn_temp);
+            let seed = &mut self.seeds[self.rng.gen_range(0..27)];
+            if !seed.active {
+                // seed.ttl = self.rng.gen_range((TTL_MAX / 2)..=TTL_MAX);
+                seed.ttl = TTL_MAX;
+                seed.active = true;
+            }
+        }
+        for s in &mut self.seeds {
+            if s.active {
+                s.ttl -= 1;
+                if s.ttl == 0 {
+                    s.active = false;
+                }
+            }
+        }
+        for s in self.seeds {
+            if s.active {
+                self.set(s.pos, 1.0 - (s.ttl as f32 / TTL_MAX as f32));
+            }
         }
         let mut new_data = self.data.clone();
         let bias_range = 0.2;
@@ -36,7 +120,7 @@ impl App for Fire {
                 let adj = matrix::adjacent(v);
                 self.set(
                     v,
-                    self.get(v) * 0.78
+                    self.get(v) * 0.76
                         + self.get(adj[2]) * bias
                         + self.get(adj[3]) * (bias_range - bias),
                 )

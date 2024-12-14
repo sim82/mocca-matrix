@@ -1,5 +1,5 @@
 use core::ops;
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Default, Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Vec2 {
     pub x: i32,
     pub y: i32,
