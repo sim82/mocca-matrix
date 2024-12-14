@@ -22,20 +22,23 @@ impl App for Fire {
         {
             let spawn = Vec2::new(
                 self.rng.gen_range(matrix::MATRIX_X) as i32,
-                self.rng.gen_range(10..matrix::MATRIX_HEIGHT) as i32,
+                self.rng.gen_range(17..matrix::MATRIX_HEIGHT) as i32,
             );
-            let spawn_temp = self.rng.gen_range(0.5..1.0);
+            let spawn_temp = self.rng.gen_range(0.2..0.6);
             self.set(spawn, spawn_temp);
         }
         let mut new_data = self.data.clone();
-        let bias = self.rng.gen_range(0.0..0.1);
+        let bias_range = 0.2;
+        let bias = self.rng.gen_range(0.0..bias_range);
         for y in 0..21 {
             for x in 0..19 {
                 let v = Vec2::new(x, y);
                 let adj = matrix::adjacent(v);
                 self.set(
                     v,
-                    self.get(v) * 0.85 + self.get(adj[2]) * bias + self.get(adj[3]) * (0.1 - bias),
+                    self.get(v) * 0.78
+                        + self.get(adj[2]) * bias
+                        + self.get(adj[3]) * (bias_range - bias),
                 )
             }
         }

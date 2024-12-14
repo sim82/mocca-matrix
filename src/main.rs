@@ -48,6 +48,7 @@ use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, ThreadModeRawMu
 // use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Instant, Ticker, Timer, TICK_HZ};
+use idsp::iir::Biquad;
 use mocca_matrix_embassy::i2s::{PioI2S, PioI2SProgram};
 use mocca_matrix_embassy::power_zones::{DynamicLimit, NUM_ZONES};
 use mocca_matrix_embassy::ws2812::{self, PioWs2812, PioWs2812Program};
@@ -182,14 +183,14 @@ async fn rgb_task() {
         app.tick(&mut led_strip.data);
         let dt = start.elapsed();
 
-        info!("calc: {}", dt.as_micros());
+        // info!("calc: {}", dt.as_micros());
         let start = Instant::now();
 
         led_strip.signal().await;
-        info!("write: {}", start.elapsed().as_micros());
+        // info!("write: {}", start.elapsed().as_micros());
         let start = Instant::now();
         ticker.next().await;
-        info!("wait: {}", start.elapsed().as_micros());
+        // info!("wait: {}", start.elapsed().as_micros());
     }
 }
 
@@ -228,16 +229,29 @@ async fn i2s_sample_task(
     let mut samples = [0i32; NUM_SAMPLES];
     let mut samples_16 = [0i16; NUM_SAMPLES];
     let mut null = 0i32;
-    const N: i32 = 100i32;
+    const N: i32 = 16i32;
     let mut filter = 0i32;
     let mut output = 0i32;
     let mut start = Instant::now();
+    let coeff = &[
+        0.9972549369794074,
+        -1.9945098739588147,
+        0.9972549369794074,
+        1.0,
+        -1.9944845691862039,
+        0.9945351787314256,
+    ];
+
+    let filter: Biquad<i32> = coeff.into();
+    let mut xy = [0i32; 4];
+    // let mut filter = Biquad::
     loop {
         // for _ in 0..20 {
         i2s.read(&mut words).await;
         // info!("dma: {}", dt.as_micros());
         for (o, i) in samples.iter_mut().zip(words) {
             let new_val = ((i << 1) as i32) >> 14;
+            // *o = filter.update(&mut xy, new_val);
             // null -= null / N;
             // null += new_val / N;
             // hyper crappy high-pass
@@ -345,9 +359,9 @@ fn main() -> ! {
     let executor = EXECUTOR_LOW.init(Executor::new());
     executor.run(|spawner| {
         unwrap!(spawner.spawn(blink_task(led)));
-        // unwrap!(spawner.spawn(rgb_task()));
+        unwrap!(spawner.spawn(rgb_task()));
         // unwrap!(spawner.spawn(rgb_simple()));
-        unwrap!(spawner.spawn(rgb_soundmeter_task()));
+        // unwrap!(spawner.spawn(rgb_soundmeter_task()));
         // unwrap!(spawner.spawn(run_low()));
         unwrap!(spawner.spawn(rgb_writer_task(ws2812 /*, uart_tx*/)));
     });
