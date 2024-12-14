@@ -35,27 +35,32 @@
 #![no_main]
 
 use app::App;
+use cortex_m_rt::entry;
 use defmt::*;
-use embassy_executor::Spawner;
-use embassy_rp::bind_interrupts;
+use embassy_executor::{Executor, InterruptExecutor, Spawner};
 use embassy_rp::gpio::{Level, Output};
+use embassy_rp::interrupt::{InterruptExt, Priority};
 use embassy_rp::peripherals::{PIO0, PIO1, UART1};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::uart::{Async, Config, UartTx};
-use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_rp::{bind_interrupts, interrupt};
+use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, ThreadModeRawMutex};
 // use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
 use embassy_sync::signal::Signal;
-use embassy_time::{Duration, Instant, Ticker, Timer};
+use embassy_time::{Duration, Instant, Ticker, Timer, TICK_HZ};
 use mocca_matrix_embassy::i2s::{PioI2S, PioI2SProgram};
 use mocca_matrix_embassy::power_zones::{DynamicLimit, NUM_ZONES};
-use mocca_matrix_embassy::ws2812::{PioWs2812, PioWs2812Program};
+use mocca_matrix_embassy::ws2812::{self, PioWs2812, PioWs2812Program};
 use mocca_matrix_embassy::{power_zones, prelude::*};
-use num_traits::{AsPrimitive, Saturating};
+use num_traits::{AsPrimitive, Saturating, WrappingAdd};
 use smart_leds::{RGB, RGB8};
+use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 const NUM_SAMPLES: usize = 64;
-static SAMPLES: Signal<ThreadModeRawMutex, [i16; NUM_SAMPLES]> = Signal::new();
+static SAMPLES: Signal<CriticalSectionRawMutex, [i16; NUM_SAMPLES]> = Signal::new();
+
+static LEDS: Signal<CriticalSectionRawMutex, [RGB8; NUM_LEDS]> = Signal::new();
 
 bind_interrupts!(struct Irqs0 {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -77,19 +82,17 @@ async fn blink_task(mut led: Output<'static>) {
 pub struct LedStrip {
     pub data: [RGB8; NUM_LEDS],
     dynamic_limit: [DynamicLimit; NUM_ZONES],
-    ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>,
     count: u32,
 }
 impl LedStrip {
-    pub fn new(ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>) -> Self {
+    pub fn new() -> Self {
         Self {
             data: [RGB8::default(); NUM_LEDS],
             dynamic_limit: Default::default(),
             count: 0,
-            ws2812,
         }
     }
-    pub async fn write(&mut self) {
+    pub async fn signal(&mut self) {
         let led_strip_power = power_zones::estimate_current_all(&self.data);
         let mut limit = [0u32; NUM_ZONES];
         for i in 0..NUM_ZONES {
@@ -103,13 +106,13 @@ impl LedStrip {
         // info!("power: {:?} {:?}", led_strip_power, limit);
         power_zones::limit_current(&mut self.data, &limit);
         self.count = self.count.wrapping_add(1);
-        self.ws2812.write(&self.data).await;
+        LEDS.signal(self.data);
     }
 }
 // const NUM_LEDS: usize = 8;
 #[embassy_executor::task]
-async fn rgb_soundmeter_task(mut ws2812: PioWs2812<'static, PIO1, 1, 8>) {
-    let mut data = [RGB::default(); 8];
+async fn rgb_soundmeter_task() {
+    let mut data = [RGB::default(); NUM_LEDS];
     // let mut led_strip = LedStrip::new(ws2812);
     let mut ticker = Ticker::every(Duration::from_millis(16));
     let mut i = 0u8;
@@ -123,17 +126,23 @@ async fn rgb_soundmeter_task(mut ws2812: PioWs2812<'static, PIO1, 1, 8>) {
         }
         i = i.wrapping_add(1);
         // let f = (smooth / (i16::MAX / 32)).min(7);
-        let f = (smooth.max(1).ilog2().saturating_sub(3)).min(8);
+        let f = (smooth.max(1).ilog2().saturating_sub(1)).min(8);
         info!("smooth: {} {}", smooth, f);
-        data[0..(f as usize)].fill(RGB {
+        data.fill(RGB {
             r: (f * 16) as u8,
             g: ((8 - f) * 16) as u8,
             b: 0,
         });
-        data[(f as usize)..].fill(RGB { r: 0, g: 0, b: 0 });
+        LEDS.signal(data);
+        // data[0..(f as usize)].fill(RGB {
+        //     r: (f * 16) as u8,
+        //     g: ((8 - f) * 16) as u8,
+        //     b: 0,
+        // });
+        // data[(f as usize)..].fill(RGB { r: 0, g: 0, b: 0 });
 
-        ws2812.write(&data).await;
-        smooth = smooth.saturating_sub((smooth / 8).max(1));
+        // ws2812.write(&data).await;
+        smooth = smooth.saturating_sub((smooth / 16).max(1));
         ticker.next().await;
     }
 }
@@ -161,8 +170,8 @@ async fn uart_task(mut uart_tx: UartTx<'static, UART1, Async>) {
     }
 }
 #[embassy_executor::task]
-async fn rgb_task(ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>) {
-    let mut led_strip = LedStrip::new(ws2812);
+async fn rgb_task() {
+    let mut led_strip = LedStrip::new();
     let mut ticker = Ticker::every(Duration::from_millis(16));
     let mut splash = app::drawing::new();
     let mut app = app::hexlife2::new();
@@ -175,7 +184,8 @@ async fn rgb_task(ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>) {
 
         info!("calc: {}", dt.as_micros());
         let start = Instant::now();
-        led_strip.write().await;
+
+        led_strip.signal().await;
         info!("write: {}", start.elapsed().as_micros());
         let start = Instant::now();
         ticker.next().await;
@@ -183,43 +193,31 @@ async fn rgb_task(ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>) {
     }
 }
 
-// #[embassy_executor::task]
-// async fn i2s_sample_task(
-//     mut i2s: PioI2S<'static, PIO0, 0>,
-//     // mut uart_tx: UartTx<'static, UART1, Async>
-// ) {
-//     let mut words = [0u32; 32];
-//     let mut samples = [0i32; 32];
-//     let mut samples_16 = [0i16; 32];
-//     let mut null = 0i32;
-//     const N: i32 = 10i32;
-//     loop {
-//         // for _ in 0..20 {
-//         i2s.read(&mut words).await;
+#[embassy_executor::task]
+async fn rgb_simple() {
+    let mut ticker = Ticker::every(Duration::from_millis(16));
+    let mut i = 0;
+    let mut data = [RGB {
+        r: 0u8,
+        g: 0u8,
+        b: 0u8,
+    }; NUM_LEDS];
+    loop {
+        ticker.next().await;
 
-//         for (o, i) in samples.iter_mut().zip(words) {
-//             *o = ((i << 1) as i32) >> 14;
-//         }
-//         let avg = samples.iter().sum::<i32>() / samples.len() as i32;
-//         null -= null / N;
-//         null += avg / N;
-//         // let samples_16 = &mut all_samples[i * 32..(i + 1) * 32];
-//         for (o, i) in samples_16.iter_mut().zip(samples) {
-//             *o = ((i - null) >> 2) as i16;
-//             // *o = (i >> 2) as i16;
-//         }
+        data.fill(RGB { r: i, g: 0, b: 0 });
+        LEDS.signal(data);
+        i = i.wrapping_add(1);
+    }
+}
 
-//         // let min = samples_16.iter().min().unwrap();
-//         // let max = samples_16.iter().max().unwrap();
-
-//         // minall = minall.min(*min);
-//         // maxall = maxall.max(*max);
-//         // AUDIO_LEVEL.signal(minall.abs().max(maxall.abs()));
-//         SAMPLES.signal(samples_16);
-//         info!("avg: {}", null);
-//         // }
-//     }
-// }
+#[embassy_executor::task]
+async fn rgb_writer_task(mut ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>) {
+    loop {
+        let leds = LEDS.wait().await;
+        ws2812.write(&leds).await;
+    }
+}
 
 #[embassy_executor::task]
 async fn i2s_sample_task(
@@ -236,11 +234,7 @@ async fn i2s_sample_task(
     let mut start = Instant::now();
     loop {
         // for _ in 0..20 {
-        let dt = start.elapsed();
-        let delay = dt.as_micros();
         i2s.read(&mut words).await;
-        info!("delay: {}, trans: {}", delay, start.elapsed().as_micros());
-        start = Instant::now();
         // info!("dma: {}", dt.as_micros());
         for (o, i) in samples.iter_mut().zip(words) {
             let new_val = ((i << 1) as i32) >> 14;
@@ -271,8 +265,41 @@ async fn i2s_sample_task(
         // }
     }
 }
-#[embassy_executor::main]
-async fn main(spawner: Spawner) {
+#[embassy_executor::task]
+async fn run_high() {
+    loop {
+        info!("        [high] tick!");
+        Timer::after_ticks(673740).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn run_low() {
+    loop {
+        let start = Instant::now();
+        info!("[low] Starting long computation");
+
+        // Spin-wait to simulate a long CPU computation
+        embassy_time::block_for(embassy_time::Duration::from_secs(2)); // ~2 seconds
+
+        let end = Instant::now();
+        let ms = end.duration_since(start).as_ticks() * 1000 / TICK_HZ;
+        info!("[low] done in {} ms", ms);
+
+        Timer::after_ticks(82983).await;
+    }
+}
+
+static EXECUTOR_HIGH: InterruptExecutor = InterruptExecutor::new();
+static EXECUTOR_LOW: StaticCell<Executor> = StaticCell::new();
+
+#[interrupt]
+unsafe fn SWI_IRQ_1() {
+    EXECUTOR_HIGH.on_interrupt()
+}
+
+#[entry]
+fn main() -> ! {
     info!("Start");
     let p = embassy_rp::init(Default::default());
 
@@ -294,7 +321,12 @@ async fn main(spawner: Spawner) {
         )
     };
 
-    unwrap!(spawner.spawn(i2s_sample_task(i2s /*, uart_tx*/)));
+    // High-priority executor: SWI_IRQ_1, priority level 2
+    interrupt::SWI_IRQ_1.set_priority(Priority::P2);
+    let spawner_high = EXECUTOR_HIGH.start(interrupt::SWI_IRQ_1);
+    // unwrap!(spawner_high.spawn(run_high()));
+    // unwrap!(spawner.spawn(run_med()));
+    unwrap!(spawner_high.spawn(i2s_sample_task(i2s /*, uart_tx*/)));
     /////////////////////////////
     let ws2812 = {
         let Pio {
@@ -303,13 +335,20 @@ async fn main(spawner: Spawner) {
         let program = PioWs2812Program::new(&mut common);
         PioWs2812::new(&mut common, sm1, p.DMA_CH1, p.PIN_17, &program)
     };
-    // unwrap!(spawner.spawn(rgb_task(ws2812)));
-    unwrap!(spawner.spawn(rgb_soundmeter_task(ws2812)));
 
     /////////////////////////////
     // let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH3, Config::default());
     // unwrap!(spawner.spawn(uart_task(uart_tx)));
 
     /////////////////////////////
-    unwrap!(spawner.spawn(blink_task(led)));
+    // Low priority executor: runs in thread mode, using WFE/SEV
+    let executor = EXECUTOR_LOW.init(Executor::new());
+    executor.run(|spawner| {
+        unwrap!(spawner.spawn(blink_task(led)));
+        // unwrap!(spawner.spawn(rgb_task()));
+        // unwrap!(spawner.spawn(rgb_simple()));
+        unwrap!(spawner.spawn(rgb_soundmeter_task()));
+        // unwrap!(spawner.spawn(run_low()));
+        unwrap!(spawner.spawn(rgb_writer_task(ws2812 /*, uart_tx*/)));
+    });
 }

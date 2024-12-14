@@ -25,6 +25,9 @@ pio-proc = "0.2.2"
 rand = { version = "0.8.5", default-features = false, features = ["small_rng"] }
 rand_core = { version = "0.6.4", default-features = false }
 smart-leds = "0.4.0"
+static_cell = "2.1.0"
+portable-atomic = { version = "1.5", features = ["critical-section"] }
+idsp = { version = "0.15.1", default-features = false }
 
 
 

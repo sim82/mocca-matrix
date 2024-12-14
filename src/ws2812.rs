@@ -134,6 +134,6 @@ impl<'d, P: Instance, const S: usize, const N: usize> PioWs2812<'d, P, S, N> {
         // DMA transfer
         self.sm.tx().dma_push(self.dma.reborrow(), &words).await;
 
-        Timer::after_micros(55).await;
+        // Timer::after_micros(55).await;
     }
 }
