@@ -105,7 +105,7 @@ impl<'d, P: Instance, const S: usize> PioI2S<'d, P, S> {
             sm,
         }
     }
-    pub async fn read(&mut self, samples: &mut [u32; 32]) {
+    pub async fn read<const N: usize>(&mut self, samples: &mut [u32; N]) {
         self.sm.rx().dma_pull(self.dma.reborrow(), samples).await;
 
         // Timer::after_micros(55).await;

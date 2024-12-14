@@ -54,8 +54,8 @@ use num_traits::{AsPrimitive, Saturating};
 use smart_leds::{RGB, RGB8};
 use {defmt_rtt as _, panic_probe as _};
 
-static AUDIO_LEVEL: Signal<ThreadModeRawMutex, i16> = Signal::new();
-static SAMPLES: Signal<ThreadModeRawMutex, [i16; 32]> = Signal::new();
+const NUM_SAMPLES: usize = 64;
+static SAMPLES: Signal<ThreadModeRawMutex, [i16; NUM_SAMPLES]> = Signal::new();
 
 bind_interrupts!(struct Irqs0 {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -108,7 +108,7 @@ impl LedStrip {
 }
 // const NUM_LEDS: usize = 8;
 #[embassy_executor::task]
-async fn rgb_task(mut ws2812: PioWs2812<'static, PIO1, 1, 8>) {
+async fn rgb_soundmeter_task(mut ws2812: PioWs2812<'static, PIO1, 1, 8>) {
     let mut data = [RGB::default(); 8];
     // let mut led_strip = LedStrip::new(ws2812);
     let mut ticker = Ticker::every(Duration::from_millis(16));
@@ -160,28 +160,28 @@ async fn uart_task(mut uart_tx: UartTx<'static, UART1, Async>) {
         }
     }
 }
-// #[embassy_executor::task]
-// async fn rgb_task(ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>) {
-//     let mut led_strip = LedStrip::new(ws2812);
-//     let mut ticker = Ticker::every(Duration::from_millis(16));
-//     let mut splash = app::drawing::new();
-//     let mut app = app::hexlife2::new();
-//     // let mut app = app::power::new();
-//     let mut app = app::cellular::new();
-//     loop {
-//         let start = Instant::now();
-//         app.tick(&mut led_strip.data);
-//         let dt = start.elapsed();
+#[embassy_executor::task]
+async fn rgb_task(ws2812: PioWs2812<'static, PIO1, 1, NUM_LEDS>) {
+    let mut led_strip = LedStrip::new(ws2812);
+    let mut ticker = Ticker::every(Duration::from_millis(16));
+    let mut splash = app::drawing::new();
+    let mut app = app::hexlife2::new();
+    // let mut app = app::power::new();
+    let mut app = app::cellular::new();
+    loop {
+        let start = Instant::now();
+        app.tick(&mut led_strip.data);
+        let dt = start.elapsed();
 
-//         info!("calc: {}", dt.as_micros());
-//         let start = Instant::now();
-//         led_strip.write().await;
-//         info!("write: {}", start.elapsed().as_micros());
-//         let start = Instant::now();
-//         ticker.next().await;
-//         info!("wait: {}", start.elapsed().as_micros());
-//     }
-// }
+        info!("calc: {}", dt.as_micros());
+        let start = Instant::now();
+        led_strip.write().await;
+        info!("write: {}", start.elapsed().as_micros());
+        let start = Instant::now();
+        ticker.next().await;
+        info!("wait: {}", start.elapsed().as_micros());
+    }
+}
 
 // #[embassy_executor::task]
 // async fn i2s_sample_task(
@@ -226,17 +226,22 @@ async fn i2s_sample_task(
     mut i2s: PioI2S<'static, PIO0, 0>,
     // mut uart_tx: UartTx<'static, UART1, Async>
 ) {
-    let mut words = [0u32; 32];
-    let mut samples = [0i32; 32];
-    let mut samples_16 = [0i16; 32];
+    let mut words = [0u32; NUM_SAMPLES];
+    let mut samples = [0i32; NUM_SAMPLES];
+    let mut samples_16 = [0i16; NUM_SAMPLES];
     let mut null = 0i32;
     const N: i32 = 100i32;
     let mut filter = 0i32;
     let mut output = 0i32;
+    let mut start = Instant::now();
     loop {
         // for _ in 0..20 {
+        let dt = start.elapsed();
+        let delay = dt.as_micros();
         i2s.read(&mut words).await;
-
+        info!("delay: {}, trans: {}", delay, start.elapsed().as_micros());
+        start = Instant::now();
+        // info!("dma: {}", dt.as_micros());
         for (o, i) in samples.iter_mut().zip(words) {
             let new_val = ((i << 1) as i32) >> 14;
             // null -= null / N;
@@ -244,7 +249,7 @@ async fn i2s_sample_task(
             // hyper crappy high-pass
             null -= (null - new_val) / N;
             *o = new_val - null;
-            *o *= 64;
+            // *o *= 64;
         }
         let avg = samples.iter().sum::<i32>() / samples.len() as i32;
         // let samples_16 = &mut all_samples[i * 32..(i + 1) * 32];
@@ -261,6 +266,7 @@ async fn i2s_sample_task(
         // maxall = maxall.max(*max);
         // AUDIO_LEVEL.signal(minall.abs().max(maxall.abs()));
         SAMPLES.signal(samples_16);
+
         // info!("avg: {}", null);
         // }
     }
@@ -290,18 +296,19 @@ async fn main(spawner: Spawner) {
 
     unwrap!(spawner.spawn(i2s_sample_task(i2s /*, uart_tx*/)));
     /////////////////////////////
-    // let ws2812 = {
-    //     let Pio {
-    //         mut common, sm1, ..
-    //     } = Pio::new(p.PIO1, Irqs1);
-    //     let program = PioWs2812Program::new(&mut common);
-    //     PioWs2812::new(&mut common, sm1, p.DMA_CH1, p.PIN_17, &program)
-    // };
+    let ws2812 = {
+        let Pio {
+            mut common, sm1, ..
+        } = Pio::new(p.PIO1, Irqs1);
+        let program = PioWs2812Program::new(&mut common);
+        PioWs2812::new(&mut common, sm1, p.DMA_CH1, p.PIN_17, &program)
+    };
     // unwrap!(spawner.spawn(rgb_task(ws2812)));
+    unwrap!(spawner.spawn(rgb_soundmeter_task(ws2812)));
 
     /////////////////////////////
-    let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH3, Config::default());
-    unwrap!(spawner.spawn(uart_task(uart_tx)));
+    // let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH3, Config::default());
+    // unwrap!(spawner.spawn(uart_task(uart_tx)));
 
     /////////////////////////////
     unwrap!(spawner.spawn(blink_task(led)));
