@@ -1,7 +1,7 @@
 use crate::{matrix, prelude::*};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
-const TTL_MAX: usize = 30;
+const TTL_MAX: usize = 60;
 
 #[derive(Default, Copy, Clone)]
 struct Seed {
@@ -90,7 +90,7 @@ impl App for Fire {
         //     let spawn_temp = self.rng.gen_range(0.2..0.6);
         //     self.set(spawn, spawn_temp);
         // }
-        {
+        if self.rng.gen_bool(0.5) {
             let seed = &mut self.seeds[self.rng.gen_range(0..27)];
             if !seed.active {
                 // seed.ttl = self.rng.gen_range((TTL_MAX / 2)..=TTL_MAX);
