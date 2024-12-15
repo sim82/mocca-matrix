@@ -6,15 +6,13 @@ const TTL_MAX: usize = 60;
 #[derive(Default, Copy, Clone)]
 struct Seed {
     pos: Vec2,
-    active: bool,
-    ttl: usize,
+    ttl: Option<usize>,
 }
 impl Seed {
     pub fn new(x: i32, y: i32) -> Self {
         Seed {
             pos: Vec2::new(x, y),
-            active: true,
-            ttl: TTL_MAX,
+            ttl: Some(TTL_MAX),
         }
     }
 }
@@ -22,25 +20,13 @@ pub struct Fire {
     data: [f32; 21 * 19],
     count: u8,
     rng: SmallRng,
-    seeds: [Seed; 27],
+    seeds: [Seed; 16],
+    bias: f32,
 }
 pub fn new() -> Fire {
     let mut data = [0.0; MATRIX_HEIGHT * MATRIX_WIDTH];
     data[10 * 19 + 10] = 1.0;
-    let mut seeds = [Seed::default(); 27];
-    seeds[0].pos = Vec2::new(0, 11);
-    seeds[0].active = true;
     let seeds = [
-        // Seed::new(0, 10),
-        // Seed::new(0, 11),
-        // Seed::new(1, 12),
-        // Seed::new(1, 13),
-        // Seed::new(2, 14),
-        Seed::default(),
-        Seed::default(),
-        Seed::default(),
-        Seed::default(),
-        Seed::default(),
         Seed::new(2, 15),
         Seed::new(3, 16),
         Seed::new(4, 16),
@@ -57,25 +43,13 @@ pub fn new() -> Fire {
         Seed::new(13, 20),
         Seed::new(14, 20),
         Seed::new(15, 20),
-        // Seed::new(15, 19),
-        // Seed::new(16, 18),
-        // Seed::new(16, 17),
-        // Seed::new(17, 16),
-        // Seed::new(17, 15),
-        // Seed::new(18, 14),
-        // Seed::new(14, 19),
-        Seed::default(),
-        Seed::default(),
-        Seed::default(),
-        Seed::default(),
-        Seed::default(),
-        Seed::default(),
     ];
     Fire {
         data,
         count: 0,
         rng: SmallRng::seed_from_u64(0),
         seeds,
+        bias: 0.5,
     }
 }
 
@@ -91,24 +65,23 @@ impl App for Fire {
         //     self.set(spawn, spawn_temp);
         // }
         if self.rng.gen_bool(0.5) {
-            let seed = &mut self.seeds[self.rng.gen_range(0..27)];
-            if !seed.active {
+            let seed = &mut self.seeds[self.rng.gen_range(0..self.seeds.len())];
+            if seed.ttl.is_none() {
                 // seed.ttl = self.rng.gen_range((TTL_MAX / 2)..=TTL_MAX);
-                seed.ttl = TTL_MAX;
-                seed.active = true;
+                seed.ttl = Some(TTL_MAX);
             }
         }
         for s in &mut self.seeds {
-            if s.active {
-                s.ttl -= 1;
-                if s.ttl == 0 {
-                    s.active = false;
+            if let Some(ttl) = &mut s.ttl {
+                *ttl -= 1;
+                if *ttl == 0 {
+                    s.ttl = None;
                 }
             }
         }
         for s in self.seeds {
-            if s.active {
-                self.set(s.pos, 1.0 - (s.ttl as f32 / TTL_MAX as f32));
+            if let Some(ttl) = s.ttl {
+                self.set(s.pos, 1.0 - (ttl as f32 / TTL_MAX as f32));
             }
         }
         let mut new_data = self.data.clone();
