@@ -58,7 +58,7 @@ use smart_leds::{RGB, RGB8};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-const NUM_SAMPLES: usize = 64;
+const NUM_SAMPLES: usize = 32;
 static SAMPLES: Signal<CriticalSectionRawMutex, [i16; NUM_SAMPLES]> = Signal::new();
 
 static LEDS: Signal<CriticalSectionRawMutex, [RGB8; NUM_LEDS]> = Signal::new();
@@ -178,6 +178,7 @@ async fn rgb_task() {
     let mut app = app::hexlife2::new();
     // let mut app = app::power::new();
     let mut app = app::cellular::new();
+    // let mut app = app::cellular::FireWorks::new();
     loop {
         let start = Instant::now();
         app.tick(&mut led_strip.data);
@@ -230,41 +231,27 @@ async fn i2s_sample_task(
     let mut samples_16 = [0i16; NUM_SAMPLES];
     let mut null = 0i32;
     const N: i32 = 16i32;
-    let mut filter = 0i32;
-    let mut output = 0i32;
-    let mut start = Instant::now();
-    let coeff = &[
-        0.9972549369794074,
-        -1.9945098739588147,
-        0.9972549369794074,
-        1.0,
-        -1.9944845691862039,
-        0.9945351787314256,
-    ];
-
-    let filter: Biquad<i32> = coeff.into();
-    let mut xy = [0i32; 4];
     // let mut filter = Biquad::
     loop {
         // for _ in 0..20 {
         i2s.read(&mut words).await;
         // info!("dma: {}", dt.as_micros());
         for (o, i) in samples.iter_mut().zip(words) {
-            let new_val = ((i << 1) as i32) >> 14;
-            // *o = filter.update(&mut xy, new_val);
-            // null -= null / N;
-            // null += new_val / N;
-            // hyper crappy high-pass
-            null -= (null - new_val) / N;
-            *o = new_val - null;
-            // *o *= 64;
+            // let new_val = ((i << 1) as i32) >> 14;
+            // // *o = filter.update(&mut xy, new_val);
+            // // null -= null / N;
+            // // null += new_val / N;
+            // // hyper crappy high-pass
+            // null -= (null - new_val) / N;
+            // *o = new_val - null;
+            *o = (i << 1) as i32 >> 16; // *o *= 64;
         }
         let avg = samples.iter().sum::<i32>() / samples.len() as i32;
         // let samples_16 = &mut all_samples[i * 32..(i + 1) * 32];
         for (o, i) in samples_16.iter_mut().zip(samples) {
             // *o = ((i - null) >> 2) as i16;
-            *o = (i >> 2) as i16;
-            // *o = (i) as i16;
+            // *o = (i >> 2) as i16;
+            *o = (i) as i16;
         }
 
         // let min = samples_16.iter().min().unwrap();
@@ -275,7 +262,7 @@ async fn i2s_sample_task(
         // AUDIO_LEVEL.signal(minall.abs().max(maxall.abs()));
         SAMPLES.signal(samples_16);
 
-        // info!("avg: {}", null);
+        // info!("avg: {}", avg);
         // }
     }
 }
@@ -351,7 +338,7 @@ fn main() -> ! {
     };
 
     /////////////////////////////
-    // let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH3, Config::default());
+    let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH3, Config::default());
     // unwrap!(spawner.spawn(uart_task(uart_tx)));
 
     /////////////////////////////
@@ -359,9 +346,10 @@ fn main() -> ! {
     let executor = EXECUTOR_LOW.init(Executor::new());
     executor.run(|spawner| {
         unwrap!(spawner.spawn(blink_task(led)));
-        unwrap!(spawner.spawn(rgb_task()));
+        // unwrap!(spawner.spawn(rgb_task()));
         // unwrap!(spawner.spawn(rgb_simple()));
         // unwrap!(spawner.spawn(rgb_soundmeter_task()));
+        unwrap!(spawner.spawn(uart_task(uart_tx)));
         // unwrap!(spawner.spawn(run_low()));
         unwrap!(spawner.spawn(rgb_writer_task(ws2812 /*, uart_tx*/)));
     });

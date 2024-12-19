@@ -84,29 +84,36 @@ impl App for Fire {
                 self.set(s.pos, 1.0 - (ttl as f32 / TTL_MAX as f32));
             }
         }
+        // let bias_range = 0.2;
+        self.bias = (self.bias + self.rng.gen_range(-0.1..0.1) * 0.5).clamp(0.0, 1.0);
         let mut new_data = self.data.clone();
-        let bias_range = 0.2;
-        let bias = self.rng.gen_range(0.0..bias_range);
+        // let bias = self.rng.gen_range(0.0..bias_range);
+        let feedback = 0.87;
+        let up = 0.1;
         for y in 0..21 {
             for x in 0..19 {
                 let v = Vec2::new(x, y);
                 let adj = matrix::adjacent(v);
                 self.set(
                     v,
-                    self.get(v) * 0.76
-                        + self.get(adj[2]) * bias
-                        + self.get(adj[3]) * (bias_range - bias),
+                    self.get(v) * feedback
+                        + self.get(adj[2]) * self.bias * up
+                        + self.get(adj[3]) * (1.0 - self.bias) * up,
                 )
             }
         }
         let r = 255.0;
         let g = 80.0;
-        let b = 0.0;
+        let b = 8.0;
         for (data, led) in self.data.iter().zip(crate::matrix::MATRIX_MAP.iter()) {
             let i = *led as usize;
             let data = data.clamp(0.0, 1.0);
             if i < NUM_LEDS {
-                led_data[i] = RGB8::new(((r * data) as u8).clamp(0, 255), (g * data) as u8, 0);
+                led_data[i] = RGB8::new(
+                    ((r * data) as u8).clamp(0, 255),
+                    (g * data) as u8,
+                    (b * data) as u8,
+                );
                 // led_data[i] = led_data[i] = (&HV8 {
                 //     h: 20,
                 //     // v: self.count,
@@ -141,4 +148,77 @@ impl Fire {
     //     let addr = MATRIX_WIDTH * v.y as usize + v.x as usize;
     //     self.data[addr]
     // }
+}
+
+pub struct FireWorks {
+    data: [f32; 21 * 19],
+    count: u8,
+    rng: SmallRng,
+    // seeds: [Seed; 16],
+}
+
+impl FireWorks {
+    pub fn new() -> FireWorks {
+        let mut data = [0.0; MATRIX_HEIGHT * MATRIX_WIDTH];
+
+        data[10 * 19 + 10] = 1.0;
+        FireWorks {
+            data,
+            count: 0,
+            rng: SmallRng::seed_from_u64(0),
+            // seeds,
+        }
+    }
+    fn set(&mut self, v: Vec2, f: f32) {
+        if v.x < 0 || v.x as usize >= MATRIX_WIDTH || v.y < 0 || v.y as usize >= MATRIX_HEIGHT {
+            return;
+        }
+        let addr = MATRIX_WIDTH * v.y as usize + v.x as usize;
+        self.data[addr] = f;
+    }
+    fn get(&self, v: Vec2) -> f32 {
+        if v.x < 0 || v.x as usize >= MATRIX_WIDTH || v.y < 0 || v.y as usize >= MATRIX_HEIGHT {
+            return 0.0;
+        }
+        let addr = MATRIX_WIDTH * v.y as usize + v.x as usize;
+        self.data[addr]
+    }
+}
+impl App for FireWorks {
+    fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS]) {
+        let feedback = 0.31;
+        let up = 0.1;
+        for y in 0..21 {
+            for x in 0..19 {
+                let v = Vec2::new(x, y);
+                let adj = matrix::adjacent(v);
+                self.set(
+                    v,
+                    self.get(v) * feedback
+                        + self.get(adj[0]) * up
+                        + self.get(adj[1]) * up
+                        + self.get(adj[2]) * up
+                        + self.get(adj[3]) * up
+                        + self.get(adj[4]) * up
+                        + self.get(adj[5]) * up,
+                )
+            }
+        }
+        let r = 255.0;
+        let g = 80.0;
+        let b = 0.0;
+        for (data, led) in self.data.iter().zip(crate::matrix::MATRIX_MAP.iter()) {
+            let i = *led as usize;
+            let data = data.clamp(0.0, 1.0);
+            if i < NUM_LEDS {
+                led_data[i] = RGB8::new(((r * data) as u8).clamp(0, 255), (g * data) as u8, 0);
+                // led_data[i] = led_data[i] = (&HV8 {
+                //     h: 20,
+                //     // v: self.count,
+                //     v: (data.clamp(0.0, 1.0) * 255.0) as u8,
+                // })
+                //     .into();
+            }
+        }
+    }
 }

@@ -26,17 +26,21 @@ impl<'a, PIO: Instance> PioI2SProgram<'a, PIO> {
                     set pindirs, 0b11               
                     .wrap_target
                     frame1:
-                        set x, 30      side 0b00
+                        set x, 29      side 0b00
                         nop            side 0b01
+                        nop            side 0b00
                     data1:
-                        in pins, 1     side 0b00
-                        jmp x-- data1  side 0b01
+                        in pins, 1     side 0b01
+                        jmp x-- data1  side 0b00
                     frame2:
-                        set x, 30      side 0b10
+                        in pins, 1     side 0b01
+                        set x, 29      side 0b10
                         nop            side 0b11
-                    data2:
                         nop            side 0b10
-                        jmp x-- data2  side 0b11
+                    data2:
+                        nop            side 0b11
+                        jmp x-- data2  side 0b10
+                        nop            side 0b11
                     .wrap
                 "#
         );
