@@ -87,7 +87,7 @@ pub fn new() -> Hexlife2 {
 }
 
 impl app::App for Hexlife2 {
-    fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS]) {
+    fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS], _env: &Env) {
         // let mut rainbow = Rainbow::step(7);
 
         if self.f >= LERP_TIME + PAUSE_TIME {

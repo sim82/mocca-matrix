@@ -18,7 +18,7 @@ embassy-time = { version = "0.3.2" }
 # embassy-time = { git = "https://github.com/embassy-rs/embassy.git", version = "0.3.2" }
 fixed = "1.28.0"
 micromath = "2.1.0"
-num-traits = {version = "0.2.19", default-features = false}
+num-traits = {version = "0.2.19", features = ["libm"], default-features = false}
 panic-probe = "0.3.2"
 pio = "0.2.1"
 pio-proc = "0.2.2"

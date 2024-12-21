@@ -1,4 +1,5 @@
 use crate::{matrix, prelude::*};
+use defmt::info;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 const TTL_MAX: usize = 60;
@@ -54,7 +55,8 @@ pub fn new() -> Fire {
 }
 
 impl App for Fire {
-    fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS]) {
+    fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS], env: &Env) {
+        // info!("spl: {}", env.spl_db);
         // self.data[10 * 19 + 10] = 1.0;
         // {
         //     let spawn = Vec2::new(
@@ -64,7 +66,11 @@ impl App for Fire {
         //     let spawn_temp = self.rng.gen_range(0.2..0.6);
         //     self.set(spawn, spawn_temp);
         // }
-        if self.rng.gen_bool(0.5) {
+        // vary activity between ~ 40 - 100 db
+        // FIXME: the second mems behaves weirly in the complete build. Maybe noise?
+        let act = ((env.spl_db - 65.0) / 40.0).clamp(0.03, 1.0);
+        // info!("act: {}", act);
+        if self.rng.gen_bool(act as f64) {
             let seed = &mut self.seeds[self.rng.gen_range(0..self.seeds.len())];
             if seed.ttl.is_none() {
                 // seed.ttl = self.rng.gen_range((TTL_MAX / 2)..=TTL_MAX);
@@ -185,7 +191,7 @@ impl FireWorks {
     }
 }
 impl App for FireWorks {
-    fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS]) {
+    fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS], _env: &Env) {
         let feedback = 0.31;
         let up = 0.1;
         for y in 0..21 {

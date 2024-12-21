@@ -1,59 +1,32 @@
-// //! This example test the RP Pico on board LED.
-// //!
-// //! It does not work with the RP Pico W board. See wifi_blinky.rs.
-
-// #![no_std]
-// #![no_main]
-
-// use defmt::*;
-// use embassy_executor::Spawner;
-// use embassy_rp::gpio;
-// use embassy_time::Timer;
-// use gpio::{Level, Output};
-// use {defmt_rtt as _, panic_probe as _};
-
-// #[embassy_executor::main]
-// async fn main(_spawner: Spawner) {
-//     let p = embassy_rp::init(Default::default());
-//     let mut led = Output::new(p.PIN_25, Level::Low);
-
-//     loop {
-//         info!("led on!");
-//         led.set_high();
-//         Timer::after_secs(1).await;
-
-//         info!("led off!");
-//         led.set_low();
-//         Timer::after_secs(1).await;
-//     }
-// }
-
-//! This example shows powerful PIO module in the RP2040 chip to communicate with WS2812 LED modules.
-//! See (https://www.sparkfun.com/categories/tags/ws2812)
-
 #![no_std]
 #![no_main]
 
 use app::App;
 use cortex_m_rt::entry;
 use defmt::*;
-use embassy_executor::{Executor, InterruptExecutor, Spawner};
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::interrupt::{InterruptExt, Priority};
-use embassy_rp::peripherals::{PIO0, PIO1, UART1};
-use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::uart::{Async, Config, UartTx};
-use embassy_rp::{bind_interrupts, interrupt};
-use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, ThreadModeRawMutex};
-// use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
-use embassy_sync::signal::Signal;
+use embassy_executor::{Executor, InterruptExecutor};
+use embassy_rp::{
+    bind_interrupts,
+    gpio::{Input, Level, Output},
+    interrupt,
+    interrupt::{InterruptExt, Priority},
+    peripherals::{PIO0, PIO1, UART1},
+    pio::{InterruptHandler, Pio},
+    uart::{Async, UartTx},
+};
+use embassy_sync::{
+    blocking_mutex::raw::{CriticalSectionRawMutex, ThreadModeRawMutex},
+    mutex::Mutex,
+    signal::Signal,
+};
 use embassy_time::{Duration, Instant, Ticker, Timer, TICK_HZ};
-use idsp::iir::Biquad;
-use mocca_matrix_embassy::i2s::{PioI2S, PioI2SProgram};
-use mocca_matrix_embassy::power_zones::{DynamicLimit, NUM_ZONES};
-use mocca_matrix_embassy::ws2812::{self, PioWs2812, PioWs2812Program};
-use mocca_matrix_embassy::{power_zones, prelude::*};
-use num_traits::{AsPrimitive, Saturating, WrappingAdd};
+use mocca_matrix_embassy::{
+    i2s::{PioI2S, PioI2SProgram},
+    power_zones::{self, DynamicLimit, NUM_ZONES},
+    prelude::*,
+    ws2812::{PioWs2812, PioWs2812Program},
+};
+use num_traits::Float;
 use smart_leds::{RGB, RGB8};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
@@ -62,6 +35,8 @@ const NUM_SAMPLES: usize = 32;
 static SAMPLES: Signal<CriticalSectionRawMutex, [i16; NUM_SAMPLES]> = Signal::new();
 
 static LEDS: Signal<CriticalSectionRawMutex, [RGB8; NUM_LEDS]> = Signal::new();
+
+static ENV: Mutex<ThreadModeRawMutex, Env> = Mutex::new(Env { spl_db: 0.0 });
 
 bind_interrupts!(struct Irqs0 {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -110,40 +85,39 @@ impl LedStrip {
         LEDS.signal(self.data);
     }
 }
-// const NUM_LEDS: usize = 8;
 #[embassy_executor::task]
-async fn rgb_soundmeter_task() {
-    let mut data = [RGB::default(); NUM_LEDS];
+async fn sound_level_task() {
     // let mut led_strip = LedStrip::new(ws2812);
     let mut ticker = Ticker::every(Duration::from_millis(16));
     let mut i = 0u8;
     // let mut color = RGB::default();
-    let mut smooth = 0i16;
+
+    let window_size = 128;
     loop {
-        if let Some(samples) = SAMPLES.try_take() {
-            let min = samples.iter().min().unwrap();
-            let max = samples.iter().max().unwrap();
-            smooth = smooth.max(min.abs().max(max.abs()));
+        // info!("receive");
+
+        let mut square = 0.0;
+
+        for _ in 0..window_size {
+            let samples = SAMPLES.wait().await;
+            square += samples
+                .iter()
+                .map(|s| {
+                    let r = (*s as f32) / (i16::MAX as f32);
+                    r * r
+                })
+                .sum::<f32>();
+        }
+
+        let rms = (square / (NUM_SAMPLES * window_size) as f32).sqrt();
+
+        let rms_db = rms.log10() * 20.0 + 26.0 + 94.0;
+        // info!("rms: {} {}", rms, rms_db);
+        {
+            let mut env = ENV.lock().await;
+            env.spl_db = rms_db;
         }
         i = i.wrapping_add(1);
-        // let f = (smooth / (i16::MAX / 32)).min(7);
-        let f = (smooth.max(1).ilog2().saturating_sub(1)).min(8);
-        info!("smooth: {} {}", smooth, f);
-        data.fill(RGB {
-            r: (f * 16) as u8,
-            g: ((8 - f) * 16) as u8,
-            b: 0,
-        });
-        LEDS.signal(data);
-        // data[0..(f as usize)].fill(RGB {
-        //     r: (f * 16) as u8,
-        //     g: ((8 - f) * 16) as u8,
-        //     b: 0,
-        // });
-        // data[(f as usize)..].fill(RGB { r: 0, g: 0, b: 0 });
-
-        // ws2812.write(&data).await;
-        smooth = smooth.saturating_sub((smooth / 16).max(1));
         ticker.next().await;
     }
 }
@@ -170,26 +144,75 @@ async fn uart_task(mut uart_tx: UartTx<'static, UART1, Async>) {
         }
     }
 }
+struct DebouncedSwitch {
+    armed: bool,
+    pub just_pressed: bool,
+    count: usize,
+}
+impl Default for DebouncedSwitch {
+    fn default() -> Self {
+        Self {
+            armed: true,
+            just_pressed: false,
+            count: 10,
+        }
+    }
+}
+impl DebouncedSwitch {
+    pub fn update(&mut self, down: bool) {
+        self.just_pressed = false;
+        if self.armed && down {
+            if self.count == 0 {
+                self.just_pressed = true;
+                self.armed = false;
+                self.count = 10;
+            } else {
+                self.count -= 1;
+            }
+        } else if !self.armed && !down {
+            if self.count == 0 {
+                self.armed = true;
+                self.count = 10;
+            } else {
+                self.count -= 1;
+            }
+        }
+    }
+}
 #[embassy_executor::task]
-async fn rgb_task() {
+async fn rgb_task(switch: Input<'static>) {
     let mut led_strip = LedStrip::new();
     let mut ticker = Ticker::every(Duration::from_millis(16));
     let mut splash = app::drawing::new();
-    let mut app = app::hexlife2::new();
-    // let mut app = app::power::new();
-    let mut app = app::cellular::new();
-    // let mut app = app::cellular::FireWorks::new();
+    let mut hexlife = app::hexlife2::new();
+    let mut fire = app::cellular::new();
+    let mut show_fire = false;
+    let mut debounce = DebouncedSwitch::default();
+    let mut ct: usize = 0;
     loop {
-        let start = Instant::now();
-        app.tick(&mut led_strip.data);
-        let dt = start.elapsed();
+        debounce.update(switch.is_low());
+        if debounce.just_pressed {
+            show_fire = !show_fire;
+        }
+        // info!("switch: {}", switch.is_low());
+        // let start = Instant::now();
+        let app = if ct < 120 {
+            &mut splash as &mut dyn App
+        } else if show_fire {
+            &mut fire as &mut dyn App
+        } else {
+            &mut hexlife as &mut dyn App
+        };
+        let env = ENV.lock().await.clone();
+        app.tick(&mut led_strip.data, &env);
+        // let dt = start.elapsed();
 
         // info!("calc: {}", dt.as_micros());
-        let start = Instant::now();
+        // let start = Instant::now();
 
         led_strip.signal().await;
         // info!("write: {}", start.elapsed().as_micros());
-        let start = Instant::now();
+        ct = ct.wrapping_add(1);
         ticker.next().await;
         // info!("wait: {}", start.elapsed().as_micros());
     }
@@ -305,6 +328,8 @@ fn main() -> ! {
     let p = embassy_rp::init(Default::default());
 
     let led = Output::new(p.PIN_25, Level::Low);
+    let switch = Input::new(p.PIN_13, embassy_rp::gpio::Pull::Up);
+    // let led = Output::new(p.PIN_0, Level::Low);
 
     let i2s = {
         let Pio {
@@ -337,8 +362,8 @@ fn main() -> ! {
         PioWs2812::new(&mut common, sm1, p.DMA_CH1, p.PIN_17, &program)
     };
 
-    /////////////////////////////
-    let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH3, Config::default());
+    ///////////////////////////
+    // let mut uart_tx = UartTx::new(p.UART1, p.PIN_8, p.DMA_CH3, Config::default());
     // unwrap!(spawner.spawn(uart_task(uart_tx)));
 
     /////////////////////////////
@@ -346,10 +371,11 @@ fn main() -> ! {
     let executor = EXECUTOR_LOW.init(Executor::new());
     executor.run(|spawner| {
         unwrap!(spawner.spawn(blink_task(led)));
-        // unwrap!(spawner.spawn(rgb_task()));
+        unwrap!(spawner.spawn(rgb_task(switch)));
         // unwrap!(spawner.spawn(rgb_simple()));
+        unwrap!(spawner.spawn(sound_level_task()));
         // unwrap!(spawner.spawn(rgb_soundmeter_task()));
-        unwrap!(spawner.spawn(uart_task(uart_tx)));
+        // unwrap!(spawner.spawn(uart_task(uart_tx)));
         // unwrap!(spawner.spawn(run_low()));
         unwrap!(spawner.spawn(rgb_writer_task(ws2812 /*, uart_tx*/)));
     });

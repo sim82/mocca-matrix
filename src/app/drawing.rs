@@ -19,7 +19,7 @@ pub fn new() -> Drawing {
 }
 
 impl app::App for Drawing {
-    fn tick(&mut self, canvas: &mut [RGB8; NUM_LEDS]) {
+    fn tick(&mut self, canvas: &mut [RGB8; NUM_LEDS], _env: &Env) {
         if self.i >= (360 / 6) {
             self.i = 0;
         }

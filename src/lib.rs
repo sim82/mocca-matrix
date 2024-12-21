@@ -14,7 +14,7 @@ pub mod ws2812;
 
 pub mod prelude {
     pub use super::{
-        app::{self, App},
+        app::{self, App, Env},
         canvas::{self, Canvas},
         color::{self, Rainbow, HV8},
         math::Vec2,

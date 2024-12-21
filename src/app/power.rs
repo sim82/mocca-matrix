@@ -13,7 +13,7 @@ pub fn new() -> Power {
 }
 
 impl app::App for Power {
-    fn tick(&mut self, canvas: &mut [RGB8; NUM_LEDS]) {
+    fn tick(&mut self, canvas: &mut [RGB8; NUM_LEDS], _env: &Env) {
         // canvas.fill(color::BLACK);
         let i = self.i % NUM_LEDS;
         // for i in 0..(self.i % NUM_LEDS) {
