@@ -189,13 +189,14 @@ async fn rgb_task(switch: Input<'static>) {
     let mut show_fire = false;
     let mut debounce = DebouncedSwitch::default();
     let mut ct: usize = 0;
+    let mut dt_cum = Duration::default();
     loop {
         debounce.update(switch.is_low());
         if debounce.just_pressed {
             show_fire = !show_fire;
         }
         // info!("switch: {}", switch.is_low());
-        // let start = Instant::now();
+        let start = Instant::now();
         let app = if ct < 120 {
             &mut splash as &mut dyn App
         } else if show_fire {
@@ -205,8 +206,13 @@ async fn rgb_task(switch: Input<'static>) {
         };
         let env = ENV.lock().await.clone();
         app.tick(&mut led_strip.data, &env);
-        // let dt = start.elapsed();
+        let dt = start.elapsed();
 
+        dt_cum += dt;
+        if ct % 60 == 0 {
+            info!("calc: {}us", dt_cum.as_micros() / 60);
+            dt_cum = Duration::default();
+        }
         // info!("calc: {}", dt.as_micros());
         // let start = Instant::now();
 

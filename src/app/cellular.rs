@@ -7,13 +7,17 @@ const TTL_MAX: usize = 60;
 #[derive(Default, Copy, Clone)]
 struct Seed {
     pos: Vec2,
-    ttl: Option<usize>,
+    fuel: f32,
+    burning: bool,
+    temperature: f32,
 }
 impl Seed {
     pub fn new(x: i32, y: i32) -> Self {
         Seed {
             pos: Vec2::new(x, y),
-            ttl: Some(TTL_MAX),
+            fuel: 1.0,
+            burning: false,
+            temperature: 0.0,
         }
     }
 }
@@ -56,42 +60,62 @@ pub fn new() -> Fire {
 
 impl App for Fire {
     fn tick(&mut self, led_data: &mut [RGB8; NUM_LEDS], env: &Env) {
-        // info!("spl: {}", env.spl_db);
-        // self.data[10 * 19 + 10] = 1.0;
-        // {
-        //     let spawn = Vec2::new(
-        //         self.rng.gen_range(matrix::MATRIX_X) as i32,
-        //         self.rng.gen_range(17..matrix::MATRIX_HEIGHT) as i32,
-        //     );
-        //     let spawn_temp = self.rng.gen_range(0.2..0.6);
-        //     self.set(spawn, spawn_temp);
-        // }
         // vary activity between ~ 40 - 100 db
         // FIXME: the second mems behaves weirly in the complete build. Maybe noise?
-        let act = ((env.spl_db - 65.0) / 40.0).clamp(0.03, 1.0);
-        // info!("act: {}", act);
-        if self.rng.gen_bool(act as f64) {
-            let seed = &mut self.seeds[self.rng.gen_range(0..self.seeds.len())];
-            if seed.ttl.is_none() {
-                // seed.ttl = self.rng.gen_range((TTL_MAX / 2)..=TTL_MAX);
-                seed.ttl = Some(TTL_MAX);
-            }
-        }
-        for s in &mut self.seeds {
-            if let Some(ttl) = &mut s.ttl {
-                *ttl -= 1;
-                if *ttl == 0 {
-                    s.ttl = None;
-                }
-            }
-        }
+        let act = ((env.spl_db - 55.0) / 50.0).clamp(0.03, 1.0);
+        // let act = ((env.spl_db - 45.0) / 60.0).clamp(0.03, 1.0);
+        info!("act: {}", act);
+        // if self.rng.gen_bool(act as f64) {
+        //     let seed = &mut self.seeds[self.rng.gen_range(0..self.seeds.len())];
+        //     if seed.ttl.is_none() {
+        //         // seed.ttl = self.rng.gen_range((TTL_MAX / 2)..=TTL_MAX);
+        //         seed.ttl = Some(TTL_MAX);
+        //     }
+        // }
+        // for s in &mut self.seeds {
+        //     if let Some(ttl) = &mut s.ttl {
+        //         *ttl -= 1;
+        //         if *ttl == 0 {
+        //             s.ttl = None;
+        //         }
+        //     }
+        // }
+        // for s in self.seeds {
+        //     if let Some(ttl) = s.ttl {
+        //         self.set(s.pos, 1.0 - (ttl as f32 / TTL_MAX as f32));
+        //     }
+        // }
         for s in self.seeds {
-            if let Some(ttl) = s.ttl {
-                self.set(s.pos, 1.0 - (ttl as f32 / TTL_MAX as f32));
+            self.set(s.pos, s.temperature);
+        }
+        let mut burning = [false; 16];
+        for (b, s) in burning.iter_mut().zip(self.seeds.iter()) {
+            *b = s.burning;
+        }
+        for (i, s) in &mut self.seeds.iter_mut().enumerate() {
+            if s.burning {
+                s.fuel -= 0.032;
+                if s.fuel <= 0.0 {
+                    s.burning = false;
+                }
+                s.temperature = (s.temperature + 0.05).clamp(0.0, 1.0);
+            } else {
+                let mut r = 0.005;
+                if i > 0 && burning[i - 1] {
+                    r += 0.005;
+                }
+                if i < burning.len() - 1 && burning[i + 1] {
+                    r += 0.005;
+                }
+                s.burning = self.rng.gen_bool(r);
             }
+            s.temperature =
+                0.00_f32.max(s.temperature - 0.02) + self.rng.gen_range(0.005f32..0.01f32);
+            s.fuel = (s.fuel + (0.03 * act)).clamp(0.0f32, 1.0f32);
         }
         // let bias_range = 0.2;
-        self.bias = (self.bias + self.rng.gen_range(-0.1..0.1) * 0.5).clamp(0.0, 1.0);
+        self.bias = (self.bias + self.rng.gen_range(-0.1..0.1) * 0.5).clamp(0.15, 0.85);
+        // info!("bias: {}", self.bias);
         let mut new_data = self.data.clone();
         // let bias = self.rng.gen_range(0.0..bias_range);
         let feedback = 0.87;
@@ -117,8 +141,8 @@ impl App for Fire {
             if i < NUM_LEDS {
                 led_data[i] = RGB8::new(
                     ((r * data) as u8).clamp(0, 255),
-                    (g * data) as u8,
-                    (b * data) as u8,
+                    ((g * data) as u8).clamp(0, 255),
+                    ((b * data) as u8).clamp(0, 255),
                 );
                 // led_data[i] = led_data[i] = (&HV8 {
                 //     h: 20,
